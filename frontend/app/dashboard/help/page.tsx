@@ -39,7 +39,7 @@ export default function HelpPage() {
   )
 
   return (
-    <div className="flex flex-col gap-8 max-w-6xl mx-auto">
+    <div className="flex flex-col gap-8 max-w-6xl mx-auto p-8">
       {/* Header Section */}
       <div className="flex flex-col gap-4 text-center py-8">
         <h1 className="text-4xl font-bold tracking-tight">How can we help you?</h1>

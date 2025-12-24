@@ -13,6 +13,7 @@ interface Notification {
   message: string;
   created_at: string;
   read: boolean;
+  metadata?: any;
 }
 
 const NotificationIcon = ({ type }: { type: string }) => {
@@ -21,6 +22,8 @@ const NotificationIcon = ({ type }: { type: string }) => {
       return <CheckCircle className="w-5 h-5 text-green-500" />;
     case 'warning':
       return <AlertTriangle className="w-5 h-5 text-yellow-500" />;
+    case 'invitation':
+      return <Bell className="w-5 h-5 text-purple-500" />;
     case 'info':
     default:
       return <Info className="w-5 h-5 text-blue-500" />;
@@ -53,12 +56,34 @@ export default function NotificationsPage() {
     }
   };
 
+  const handleAccept = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    try {
+        await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/notifications/${id}/accept`);
+        alert("Invitation accepted! You have been added to the project.");
+        mutate();
+    } catch (error) {
+        console.error("Error accepting invitation:", error);
+        alert("Failed to accept invitation.");
+    }
+  };
+
+  const handleReject = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    try {
+        await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/notifications/${id}/reject`);
+        mutate();
+    } catch (error) {
+        console.error("Error rejecting invitation:", error);
+    }
+  };
+
   if (isLoading) {
     return <div className="p-8 text-center">Loading notifications...</div>;
   }
 
   return (
-    <div className="container mx-auto max-w-4xl">
+    <div className="container mx-auto max-w-4xl p-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Bell className="w-6 h-6" />
@@ -87,6 +112,23 @@ export default function NotificationsPage() {
                     <span className="text-xs text-gray-500">{new Date(notification.created_at).toLocaleString()}</span>
                 </div>
                 <p className="text-sm text-gray-600 mt-1">{notification.message}</p>
+                
+                {notification.type === 'invitation' && !notification.read && (
+                    <div className="mt-3 flex gap-2">
+                        <button 
+                            onClick={(e) => handleAccept(e, notification.id)}
+                            className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                        >
+                            Accept
+                        </button>
+                        <button 
+                            onClick={(e) => handleReject(e, notification.id)}
+                            className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+                        >
+                            Reject
+                        </button>
+                    </div>
+                )}
                 </div>
                 {!notification.read && (
                 <div className="flex-shrink-0 self-center">

@@ -22,6 +22,7 @@ class NotificationCreate(BaseModel):
     title: str
     message: str
     read: bool = False
+    metadata: Optional[dict] = None
 
 class Notification(NotificationCreate):
     id: int

@@ -88,7 +88,9 @@ export default function ProjectsPage() {
 
     try {
       mutateProjects(projects.filter((p: Project) => p.id !== projectId), false)
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/projects/${projectId}`)
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/projects/${projectId}`, {
+        headers: { "X-Clerk-User-Id": user?.id }
+      })
       mutateProjects()
     } catch (error) {
       console.error("Failed to delete project:", error)
@@ -123,7 +125,7 @@ export default function ProjectsPage() {
   const selectedProcess = processes.find(p => p.id.toString() === selectedProcessId)
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 p-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold">Projects</h1>
         <p className="text-muted-foreground">Manage your projects and link them to FuSa processes.</p>

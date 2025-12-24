@@ -1,6 +1,7 @@
-import React from 'react';
-import { Box, FileText, Activity, GitMerge, Layers, Type, Columns, Save, Upload, Download, History } from 'lucide-react';
+import React, { useState } from 'react';
+import { Box, FileText, Activity, GitMerge, Layers, Type, Columns, Save, Upload, Download, History, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface ProcessSidebarProps {
   onSaveVersion?: () => void;
@@ -19,6 +20,8 @@ export const ProcessSidebar = ({
   onLoadVersion,
   onAddLane
 }: ProcessSidebarProps) => {
+  const [isOpen, setIsOpen] = useState(true);
+
   const onDragStart = (event: React.DragEvent, nodeType: string, label: string) => {
     event.dataTransfer.setData('application/reactflow', nodeType);
     event.dataTransfer.setData('application/reactflow/label', label);
@@ -33,10 +36,22 @@ export const ProcessSidebar = ({
   };
 
   return (
-    <aside className="w-64 border-r bg-white p-4 flex flex-col gap-4 h-full overflow-y-auto">
-      <div className="font-bold text-sm text-gray-500 uppercase">Toolbox</div>
+    <aside className={cn(
+      "border-r bg-white flex flex-col h-full transition-all duration-300 relative",
+      isOpen ? "w-64" : "w-0 border-none"
+    )}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="absolute -right-3 top-6 bg-white border rounded-full p-1 shadow-md z-50 hover:bg-gray-50"
+        title={isOpen ? "Hide Toolbox" : "Show Toolbox"}
+      >
+        {isOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+      </button>
+
+      <div className={cn("flex flex-col gap-4 h-full overflow-y-auto p-4 min-w-[16rem]", !isOpen && "hidden")}>
+        <div className="font-bold text-sm text-gray-500 uppercase">Toolbox</div>
       
-      <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2">
         <div 
           className="flex items-center gap-2 p-2 border rounded cursor-grab hover:bg-gray-50 bg-blue-100 border-blue-200" 
           onDragStart={(event) => onDragStart(event, 'workProduct', 'Work Product')} 
@@ -147,8 +162,9 @@ export const ProcessSidebar = ({
           </div>
         )}
       </div>
+    </div>
 
-      <div className="mt-auto border-t pt-4">
+      <div className={cn("mt-auto border-t pt-4", !isOpen && "hidden")}>
         <div className="font-bold text-sm text-gray-500 mb-2">Properties</div>
         <div className="text-xs text-gray-400 italic">Select an element to view properties</div>
       </div>

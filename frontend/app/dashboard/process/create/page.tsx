@@ -31,7 +31,8 @@ import { useUser } from '@clerk/nextjs';
 import axios from 'axios';
 import { ProcessProvider } from '@/context/ProcessContext';
 import { NodeInfoDialog } from '@/components/process/NodeInfoDialog';
-import { Trash2, Edit2, Check } from 'lucide-react';
+import { ShareProjectDialog } from '@/components/process/ShareProjectDialog';
+import { Trash2, Edit2, Check, X } from 'lucide-react';
 
 const initialNodes = [
   {
@@ -69,6 +70,7 @@ interface ProcessCanvasProps {
   setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
   users: any[];
   isReadOnly?: boolean;
+  projectId?: string | null;
 }
 
 const LANE_WIDTH = 300;
@@ -84,7 +86,8 @@ const ProcessCanvas = ({
   setNodes,
   setEdges,
   users,
-  isReadOnly = false
+  isReadOnly = false,
+  projectId
 }: ProcessCanvasProps) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
@@ -284,7 +287,8 @@ const ProcessCanvas = ({
         <PropertiesPanel 
             selectedNode={selectedNode} 
             onSave={handleSaveProperties} 
-            onClose={() => setSelectedNode(null)} 
+            onClose={() => setSelectedNode(null)}
+            projectId={projectId}
         />
       )}
       
@@ -328,8 +332,43 @@ export default function CreateProcessPage() {
   const [lanes, setLanes] = useState<{ id: string; name: string }[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [projectPermission, setProjectPermission] = useState<'owner' | 'editor' | 'viewer' | null>(null);
+  const [currentCollaborators, setCurrentCollaborators] = useState<{ user_id: string; role: string }[]>([]);
 
   const isReadOnly = projectPermission === 'viewer';
+
+  const fetchProjectData = async () => {
+      if (!projectId) return;
+      try {
+          const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/project/${projectId}`);
+          const projectData = response.data;
+          
+          if (user) {
+             if (projectData.user_id === user.id) {
+                 setProjectPermission('owner');
+             } else {
+                 const collaborator = projectData.collaborators?.find((c: any) => c.user_id === user.id);
+                 if (collaborator) {
+                     setProjectPermission(collaborator.role as any);
+                 } else {
+                     setProjectPermission('viewer');
+                 }
+             }
+          }
+          setCurrentCollaborators(projectData.collaborators || []);
+
+          if (projectData.sheets && projectData.sheets.length > 0) {
+            setSheets(projectData.sheets);
+            // Only set active sheet if not already set or if it's the first load
+            // Actually, we should probably respect the saved state, but for now let's keep it simple
+            // If we are switching projects, we definitely want to reset.
+            // But this function might be called for updates (like adding members).
+            // So we should be careful not to reset the canvas state if we are just updating metadata.
+            // For now, let's assume this is mainly for initial load or explicit refresh.
+          }
+      } catch (error) {
+          console.error("Failed to load project:", error);
+      }
+  };
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -374,6 +413,7 @@ export default function CreateProcessPage() {
                  }
              }
           }
+          setCurrentCollaborators(projectData.collaborators || []);
 
           if (projectData.sheets && projectData.sheets.length > 0) {
             setSheets(projectData.sheets);
@@ -515,6 +555,42 @@ export default function CreateProcessPage() {
   // Sync active sheet state to sheets array when switching or saving
   // We need to be careful not to overwrite with stale state
   
+  // Sheet Editing State
+  const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
+  const [editingSheetName, setEditingSheetName] = useState('');
+
+  const startEditingSheet = (sheet: ProcessSheet) => {
+    setEditingSheetId(sheet.id);
+    setEditingSheetName(sheet.name);
+  };
+
+  const saveSheetName = () => {
+    if (editingSheetId) {
+      setSheets(prev => prev.map(s => s.id === editingSheetId ? { ...s, name: editingSheetName } : s));
+      setEditingSheetId(null);
+    }
+  };
+
+  const handleDeleteSheet = (sheetId: string) => {
+    if (sheetId === 'parent') {
+        alert("Cannot delete the parent process sheet.");
+        return;
+    }
+    if (confirm("Are you sure you want to delete this sheet?")) {
+        setSheets(prev => prev.filter(s => s.id !== sheetId));
+        if (activeSheetId === sheetId) {
+            setActiveSheetId('parent');
+            // We need to load the parent sheet data
+            const parentSheet = sheets.find(s => s.id === 'parent');
+            if (parentSheet) {
+                setNodes(parentSheet.nodes);
+                setEdges(parentSheet.edges);
+                setLanes(parentSheet.lanes || []);
+            }
+        }
+    }
+  };
+
   const handleSwitchSheet = (newSheetId: string) => {
     if (newSheetId === activeSheetId) return;
 
@@ -616,11 +692,19 @@ export default function CreateProcessPage() {
   // }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col">
+    <div className="flex h-full flex-col">
       <div className="flex-none p-4 border-b bg-white flex justify-between items-center">
         <h1 className="text-2xl font-bold">{projectId ? 'Edit Project Canvas' : 'Create New Process'}</h1>
         {!isReadOnly && (
         <div className="flex gap-2">
+            {projectId && projectPermission === 'owner' && (
+                <ShareProjectDialog 
+                    projectId={projectId} 
+                    users={users} 
+                    currentCollaborators={currentCollaborators}
+                    onUpdate={fetchProjectData}
+                />
+            )}
             {!projectId && <button className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 text-sm font-medium">Save Draft</button>}
             <button 
               onClick={handleSave}
@@ -658,24 +742,48 @@ export default function CreateProcessPage() {
                 setEdges={setEdges}
                 users={users}
                 isReadOnly={isReadOnly}
+                projectId={projectId}
              />
              
              {/* Excel-like Tabs Bar */}
              <div className="h-10 bg-gray-100 border-t flex items-center px-2 gap-1 overflow-x-auto">
                 {sheets.map(sheet => (
-                  <button
+                  <div
                     key={sheet.id}
-                    onClick={() => handleSwitchSheet(sheet.id)}
                     className={cn(
-                      "flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-t-md border-t border-x transition-colors min-w-30",
+                      "group flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-t-md border-t border-x transition-colors min-w-30 cursor-pointer",
                       activeSheetId === sheet.id 
                         ? "bg-white border-gray-300 text-blue-600 relative top-px z-10" 
                         : "bg-gray-200 border-transparent text-gray-600 hover:bg-gray-300"
                     )}
+                    onClick={() => handleSwitchSheet(sheet.id)}
+                    onDoubleClick={() => startEditingSheet(sheet)}
                   >
-                    {sheet.id === 'parent' ? <Layout className="w-3 h-3" /> : <FileSpreadsheet className="w-3 h-3" />}
-                    {sheet.name}
-                  </button>
+                    {editingSheetId === sheet.id ? (
+                        <input 
+                            value={editingSheetName}
+                            onChange={(e) => setEditingSheetName(e.target.value)}
+                            onBlur={saveSheetName}
+                            onKeyDown={(e) => e.key === 'Enter' && saveSheetName()}
+                            autoFocus
+                            className="w-24 px-1 py-0.5 text-xs border rounded"
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    ) : (
+                        <>
+                            {sheet.id === 'parent' ? <Layout className="w-3 h-3" /> : <FileSpreadsheet className="w-3 h-3" />}
+                            <span>{sheet.name}</span>
+                            {sheet.id !== 'parent' && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteSheet(sheet.id); }}
+                                    className="ml-1 p-0.5 rounded-full hover:bg-red-100 text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                    <X size={12} />
+                                </button>
+                            )}
+                        </>
+                    )}
+                  </div>
                 ))}
                 <button 
                   onClick={handleAddSheet}

@@ -2,11 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import { useUser } from '@clerk/nextjs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 
 interface PropertiesPanelProps {
   selectedNode: any;
   onSave: (nodeId: string, data: any) => void;
   onClose: () => void;
+  projectId?: string | null;
 }
 
 interface User {
@@ -17,7 +21,7 @@ interface User {
   role: string;
 }
 
-export const PropertiesPanel = ({ selectedNode, onSave, onClose }: PropertiesPanelProps) => {
+export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: PropertiesPanelProps) => {
   const { user } = useUser();
   const [formData, setFormData] = useState<any>({
     label: '',
@@ -43,6 +47,29 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose }: PropertiesPan
   const [newRoleName, setNewRoleName] = useState('');
   const [availableUsers, setAvailableUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+
+  const isTextNode = selectedNode?.type === 'text';
+
+  // Dialog State
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [currentAddField, setCurrentAddField] = useState('');
+  const [newItemValue, setNewItemValue] = useState('');
+
+  const openAddDialog = (field: string) => {
+    setCurrentAddField(field);
+    setNewItemValue('');
+    setIsAddDialogOpen(true);
+  };
+
+  const handleAddItem = () => {
+    if (newItemValue && currentAddField) {
+      setFormData((prev: any) => ({
+        ...prev,
+        [currentAddField]: [...(prev[currentAddField] || []), newItemValue]
+      }));
+      setIsAddDialogOpen(false);
+    }
+  };
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -93,15 +120,6 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose }: PropertiesPan
     setFormData((prev: any) => ({ ...prev, [field]: value }));
   };
 
-  const handleArrayAdd = (field: string) => {
-    const value = prompt(`Add new ${field.slice(0, -1)}:`);
-    if (value) {
-      setFormData((prev: any) => ({
-        ...prev,
-        [field]: [...(prev[field] || []), value]
-      }));
-    }
-  };
 
   const handleArrayRemove = (field: string, index: number) => {
     setFormData((prev: any) => ({
@@ -116,25 +134,35 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose }: PropertiesPan
       const selectedUser = availableUsers.find(u => u.clerk_id === userId);
       if (!selectedUser) return;
 
+      const sendNotification = async (roleType: string) => {
+          try {
+            await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/notifications`, {
+              user_id: userId,
+              type: 'invitation',
+              title: `Project Invitation: ${roleType}`,
+              message: `You have been assigned as ${roleType} for the node "${formData.label || 'Untitled'}" in a project by ${user?.fullName || user?.primaryEmailAddress?.emailAddress}.`,
+              read: false,
+              metadata: {
+                  project_id: projectId,
+                  role: 'editor', // Default to editor for assigned users? Or viewer?
+                  node_id: selectedNode.id,
+                  node_label: formData.label
+              }
+            });
+            alert(`Invitation sent to ${selectedUser.first_name || selectedUser.email}`);
+          } catch (error) {
+            console.error('Error sending notification:', error);
+          }
+      };
+
       // For responsibility, we only want ONE user, not an array
       if (field === 'responsibility') {
           setFormData((prev: any) => ({
               ...prev,
               [field]: [userId] // Store ID, not name, for easier permission checks
           }));
-
-          // Send notification
-          try {
-            await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/notifications`, {
-              user_id: userId,
-              type: 'info',
-              title: 'New Responsibility Assigned',
-              message: `You have been assigned as Responsible for the node "${formData.label || 'Untitled'}" by ${user?.fullName || user?.primaryEmailAddress?.emailAddress}.`,
-              read: false
-            });
-            alert(`Notification sent to ${selectedUser.first_name || selectedUser.email}`);
-          } catch (error) {
-            console.error('Error sending notification:', error);
+          if (projectId) {
+              await sendNotification('Responsible');
           }
       } else {
           // Store ID for support as well to enable full user details in NodeInfoDialog
@@ -143,6 +171,9 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose }: PropertiesPan
                   ...prev,
                   [field]: [...(prev[field] || []), userId]
               }));
+              if (projectId) {
+                  await sendNotification('Support');
+              }
           }
       }
   };
@@ -244,6 +275,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose }: PropertiesPan
         </div>
 
         {/* State */}
+        {!isTextNode && (
         <div className="space-y-2">
           <label className="text-sm font-medium text-gray-700">State</label>
           <select
@@ -256,8 +288,10 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose }: PropertiesPan
             <option value="Published">Published</option>
           </select>
         </div>
+        )}
 
         {/* Roles & Responsibilities Section */}
+        {!isTextNode && (
         <div className="space-y-4 border-t pt-4">
             <div className="flex justify-between items-center">
                 <h3 className="font-bold text-sm text-gray-800">Roles & Responsibilities</h3>
@@ -349,19 +383,20 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose }: PropertiesPan
                 </div>
             </div>
         </div>
+        )}
 
         {/* Links */}
         <div className="space-y-2 border-t pt-4">
             <div className="flex justify-between items-center">
                 <label className="text-sm font-medium text-gray-700">Links</label>
-                <button onClick={() => handleArrayAdd('links')} className="text-blue-600 hover:text-blue-800">
+                <button onClick={() => openAddDialog('links')} className="text-blue-600 hover:text-blue-800">
                     <Plus size={16} />
                 </button>
             </div>
             <div className="space-y-2">
                 {formData.links?.map((link: string, i: number) => (
                     <div key={i} className="flex items-center gap-2 bg-gray-50 p-2 rounded text-sm">
-                        <span className="flex-1 truncate">{link}</span>
+                        <a href={link} target="_blank" rel="noopener noreferrer" className="flex-1 truncate text-blue-600 hover:underline">{link}</a>
                         <button onClick={() => handleArrayRemove('links', i)} className="text-red-500 hover:text-red-700">
                             <Trash2 size={14} />
                         </button>
@@ -398,6 +433,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose }: PropertiesPan
         </div>
 
         {/* Font Size */}
+        {isTextNode && (
         <div className="space-y-2">
           <label className="text-sm font-medium text-gray-700">Font Size</label>
           <div className="flex items-center gap-2">
@@ -416,8 +452,10 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose }: PropertiesPan
             </button>
           </div>
         </div>
+        )}
 
         {/* Text Formatting */}
+        {isTextNode && (
         <div className="space-y-4">
           <h3 className="font-bold text-sm text-gray-800 border-b pb-1">Text Formatting</h3>
           
@@ -469,45 +507,32 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose }: PropertiesPan
             <label htmlFor="wrap" className="text-sm text-gray-700">Wrap Text</label>
           </div>
         </div>
+        )}
 
         {/* Metadata Sections */}
-        {['Templates', 'Guidelines', 'Checklists'].map((section) => {
+        {!isTextNode && ['Templates', 'Guidelines', 'Checklists'].map((section) => {
             const field = section.toLowerCase();
             return (
-                <div key={section} className="space-y-2">
+                <div key={section} className="space-y-2 border-t pt-4">
                     <div className="flex justify-between items-center">
-                        <label className="text-sm font-bold text-gray-800">{section}</label>
+                        <label className="text-sm font-medium text-gray-700">{section}</label>
+                        <button onClick={() => openAddDialog(field)} className="text-blue-600 hover:text-blue-800">
+                            <Plus size={16} />
+                        </button>
                     </div>
                     <div className="space-y-2">
                         {formData[field]?.map((item: string, idx: number) => (
-                            <div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded text-sm">
-                                <span className="truncate">{item}</span>
+                            <div key={idx} className="flex items-center gap-2 bg-gray-50 p-2 rounded text-sm">
+                                <a href={item} target="_blank" rel="noopener noreferrer" className="flex-1 truncate text-blue-600 hover:underline">{item}</a>
                                 <button onClick={() => handleArrayRemove(field, idx)} className="text-red-500 hover:text-red-700">
                                     <Trash2 size={14} />
                                 </button>
                             </div>
                         ))}
-                        <button 
-                            onClick={() => handleArrayAdd(field)}
-                            className="w-full py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 flex items-center justify-center gap-2"
-                        >
-                            <Plus size={14} /> Add {section.slice(0, -1)}
-                        </button>
                     </div>
                 </div>
             )
         })}
-
-        {/* Description */}
-        <div className="space-y-2">
-            <label className="text-sm font-bold text-gray-800">Description</label>
-            <textarea
-                value={formData.description}
-                onChange={(e) => handleChange('description', e.target.value)}
-                className="w-full p-2 border rounded-md text-sm h-24 outline-none resize-none"
-                placeholder="Enter description..."
-            />
-        </div>
 
       </div>
 
@@ -525,6 +550,30 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose }: PropertiesPan
             Save Changes
         </button>
       </div>
+
+      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New {currentAddField.charAt(0).toUpperCase() + currentAddField.slice(1)}</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              value={newItemValue}
+              onChange={(e) => setNewItemValue(e.target.value)}
+              placeholder={`Enter ${currentAddField} URL...`}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleAddItem();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleAddItem}>Add</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

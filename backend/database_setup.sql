@@ -127,3 +127,8 @@ create policy "Enable update access for all users"
 on public.projects for update
 using ( true );
 
+drop policy if exists "Enable delete access for all users" on public.projects;
+create policy "Enable delete access for all users"
+on public.projects for delete
+using ( true );
+

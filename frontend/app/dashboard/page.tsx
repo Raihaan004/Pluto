@@ -123,7 +123,7 @@ export default async function DashboardPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 p-8">
       <UserSync />
       <h1 className="text-3xl font-bold">Dashboard</h1>
       

@@ -260,10 +260,12 @@ def get_projects(user_id: str):
         # 2. Shared projects
         shared_data = []
         try:
-            shared = supabase.table("projects").select("*").contains("collaborators", [{"user_id": user_id}]).execute()
+            # Use json.dumps to ensure the list of dicts is passed as a string to the contains filter
+            import json
+            shared = supabase.table("projects").select("*").contains("collaborators", json.dumps([{"user_id": user_id}])).execute()
             shared_data = shared.data
         except Exception as e:
-            print(f"Warning: Could not fetch shared projects (likely missing 'collaborators' column): {e}")
+            print(f"Warning: Could not fetch shared projects: {e}")
         
         # Merge and sort
         all_projects = owned.data + shared_data
@@ -345,11 +347,106 @@ def get_all_projects(requester_id: Optional[str] = Header(None, alias="X-Clerk-U
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/projects/{project_id}")
-def delete_project(project_id: int):
+def delete_project(project_id: int, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     try:
+        # Check ownership if requester_id is provided
+        if requester_id:
+             project = supabase.table("projects").select("user_id").eq("id", project_id).execute()
+             if project.data:
+                 owner_id = project.data[0]["user_id"]
+                 if owner_id != requester_id:
+                     # Check if admin
+                     user = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
+                     if not user.data or user.data[0]["role"] != "admin":
+                         raise HTTPException(status_code=403, detail="Not authorized to delete this project")
+
         response = supabase.table("projects").delete().eq("id", project_id).execute()
         return {"status": "deleted", "data": response.data}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f"Error deleting project: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/notifications")
+def create_notification(notification: NotificationCreate):
+    try:
+        data = notification.model_dump()
+        response = supabase.table("notifications").insert(data).execute()
+        return {"status": "created", "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/notifications/{user_id}")
+def get_notifications(user_id: str):
+    try:
+        response = supabase.table("notifications").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/notifications/{notification_id}/read")
+def mark_notification_read(notification_id: int):
+    try:
+        response = supabase.table("notifications").update({"read": True}).eq("id", notification_id).execute()
+        return {"status": "updated", "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/notifications/{notification_id}/accept")
+def accept_notification(notification_id: int):
+    try:
+        # 1. Get the notification
+        notif_res = supabase.table("notifications").select("*").eq("id", notification_id).execute()
+        if not notif_res.data:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        
+        notification = notif_res.data[0]
+        metadata = notification.get("metadata") or {}
+        project_id = metadata.get("project_id")
+        role = metadata.get("role", "viewer")
+        user_id = notification["user_id"] # The recipient of the notification
+
+        if not project_id:
+             raise HTTPException(status_code=400, detail="Invalid notification: missing project_id")
+
+        # 2. Add user as collaborator to the project
+        # Fetch current project
+        project_res = supabase.table("projects").select("collaborators").eq("id", project_id).execute()
+        if not project_res.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+            
+        current_collaborators = project_res.data[0].get("collaborators") or []
+        
+        # Check if already exists
+        exists = False
+        for c in current_collaborators:
+            if c["user_id"] == user_id:
+                c["role"] = role # Update role
+                exists = True
+                break
+        
+        if not exists:
+            current_collaborators.append({"user_id": user_id, "role": role})
+            
+        # Update project
+        supabase.table("projects").update({"collaborators": current_collaborators}).eq("id", project_id).execute()
+
+        # 3. Mark notification as read
+        supabase.table("notifications").update({"read": True}).eq("id", notification_id).execute()
+
+        return {"status": "accepted"}
+    except Exception as e:
+        print(f"Error accepting notification: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/notifications/{notification_id}/reject")
+def reject_notification(notification_id: int):
+    try:
+        # Just mark as read for now, or delete
+        supabase.table("notifications").update({"read": True}).eq("id", notification_id).execute()
+        return {"status": "rejected"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 

@@ -216,7 +216,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 p-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold">Admin Dashboard</h1>
         <p className="text-muted-foreground">Manage users and their roles.</p>
@@ -254,13 +254,34 @@ export default function AdminPage() {
                       <td className="p-4 align-middle">{u.email}</td>
                       <td className="p-4 align-middle">
                         <div className="flex flex-col gap-1 max-h-[100px] overflow-y-auto">
-                          {projects.filter(p => p.user_id === u.clerk_id).map(p => (
-                            <div key={p.id} className="flex items-center justify-between gap-2 text-xs bg-secondary px-2 py-1 rounded-md whitespace-nowrap">
-                              <span>{p.name} <span className="text-muted-foreground">({p.version_name})</span></span>
-                              <ProjectAccessDialog project={p} users={users} onUpdate={fetchData} />
-                            </div>
-                          ))}
-                          {projects.filter(p => p.user_id === u.clerk_id).length === 0 && (
+                          {projects.filter(p => 
+                            p.user_id === u.clerk_id || 
+                            p.collaborators?.some(c => c.user_id === u.clerk_id)
+                          ).map(p => {
+                            const isOwner = p.user_id === u.clerk_id;
+                            const collaborator = p.collaborators?.find(c => c.user_id === u.clerk_id);
+                            const role = isOwner ? 'owner' : (collaborator?.role || 'viewer');
+                            
+                            return (
+                              <div key={p.id} className="flex items-center justify-between gap-2 text-xs bg-secondary px-2 py-1 rounded-md whitespace-nowrap">
+                                <div className="flex items-center gap-2">
+                                  <span>{p.name} <span className="text-muted-foreground">({p.version_name})</span></span>
+                                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${
+                                    isOwner ? 'bg-blue-50 text-blue-700 border-blue-200' : 
+                                    role === 'editor' ? 'bg-amber-50 text-amber-700 border-amber-200' : 
+                                    'bg-slate-50 text-slate-700 border-slate-200'
+                                  }`}>
+                                    {role.charAt(0).toUpperCase() + role.slice(1)}
+                                  </span>
+                                </div>
+                                <ProjectAccessDialog project={p} users={users} onUpdate={fetchData} />
+                              </div>
+                            );
+                          })}
+                          {projects.filter(p => 
+                            p.user_id === u.clerk_id || 
+                            p.collaborators?.some(c => c.user_id === u.clerk_id)
+                          ).length === 0 && (
                             <span className="text-muted-foreground text-xs italic">No projects</span>
                           )}
                         </div>
