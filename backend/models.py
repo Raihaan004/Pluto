@@ -56,6 +56,10 @@ class ProjectCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     sheets: list[ProcessSheet]
 
+class CollaboratorAdd(BaseModel):
+    user_id: str
+    role: str
+
 class ProcessPackage(ProcessPackageCreate):
     id: int
     created_at: str

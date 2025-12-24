@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from database import supabase
-from models import UserCreate, RoleUpdate, NotificationCreate, ProcessPackageCreate, ProcessRename, ProcessVersionCreate, ProjectCreate, ProjectUpdate
+from models import UserCreate, RoleUpdate, NotificationCreate, ProcessPackageCreate, ProcessRename, ProcessVersionCreate, ProjectCreate, ProjectUpdate, CollaboratorAdd
 from typing import Optional
 from datetime import datetime
 
@@ -254,8 +254,55 @@ def create_project(project: ProjectCreate):
 @app.get("/projects/{user_id}")
 def get_projects(user_id: str):
     try:
-        response = supabase.table("projects").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
-        return response.data
+        # 1. Owned projects
+        owned = supabase.table("projects").select("*").eq("user_id", user_id).execute()
+        
+        # 2. Shared projects
+        shared_data = []
+        try:
+            shared = supabase.table("projects").select("*").contains("collaborators", [{"user_id": user_id}]).execute()
+            shared_data = shared.data
+        except Exception as e:
+            print(f"Warning: Could not fetch shared projects (likely missing 'collaborators' column): {e}")
+        
+        # Merge and sort
+        all_projects = owned.data + shared_data
+        # Remove duplicates based on id if any
+        seen = set()
+        unique_projects = []
+        for p in all_projects:
+            if p['id'] not in seen:
+                seen.add(p['id'])
+                unique_projects.append(p)
+                
+        unique_projects.sort(key=lambda x: x['created_at'], reverse=True)
+        return unique_projects
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/projects/{project_id}/collaborators")
+def add_collaborator(project_id: int, collaborator: CollaboratorAdd):
+    try:
+        # Fetch current project
+        project_res = supabase.table("projects").select("collaborators").eq("id", project_id).execute()
+        if not project_res.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+            
+        current_collaborators = project_res.data[0].get("collaborators", [])
+        
+        # Check if already exists
+        exists = False
+        for c in current_collaborators:
+            if c["user_id"] == collaborator.user_id:
+                c["role"] = collaborator.role # Update role
+                exists = True
+                break
+        
+        if not exists:
+            current_collaborators.append(collaborator.model_dump())
+            
+        response = supabase.table("projects").update({"collaborators": current_collaborators}).eq("id", project_id).execute()
+        return {"status": "updated", "data": response.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -278,6 +325,22 @@ def update_project(project_id: int, update: ProjectUpdate):
         }
         response = supabase.table("projects").update(data).eq("id", project_id).execute()
         return {"status": "updated", "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/admin/projects")
+def get_all_projects(requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
+    if not requester_id:
+        raise HTTPException(status_code=401, detail="Missing user ID header")
+        
+    # Check if requester is admin
+    requester = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
+    if not requester.data or requester.data[0]["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    try:
+        response = supabase.table("projects").select("*").order("created_at", desc=True).execute()
+        return response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

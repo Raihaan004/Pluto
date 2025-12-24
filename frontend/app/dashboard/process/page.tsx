@@ -4,11 +4,12 @@ import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useUserRole } from "@/context/UserRoleContext"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useUser } from "@clerk/nextjs"
 import axios from "axios"
 import { FileText, Edit2, Check, X } from "lucide-react"
 import { useRouter } from "next/navigation"
+import useSWR from 'swr'
 
 interface Process {
   id: number
@@ -17,43 +18,37 @@ interface Process {
   updated_at: string
 }
 
+const fetcher = (url: string) => axios.get(url).then(res => res.data)
+
 export default function ProcessPage() {
   const { role } = useUserRole()
   const { user } = useUser()
   const router = useRouter()
-  const [processes, setProcesses] = useState<Process[]>([])
-  const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [newName, setNewName] = useState("")
 
-  useEffect(() => {
-    const fetchProcesses = async () => {
-      if (!user) return
-      try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/processes/${user.id}`)
-        setProcesses(response.data)
-      } catch (error) {
-        console.error("Failed to fetch processes:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    if (user) {
-      fetchProcesses()
-    }
-  }, [user])
+  const { data: processes = [], error, isLoading, mutate } = useSWR(
+    user ? `${process.env.NEXT_PUBLIC_API_URL}/processes/${user.id}` : null,
+    fetcher
+  )
 
   const handleRename = async (id: number) => {
     if (!newName.trim()) return
     try {
+      // Optimistic update
+      mutate(
+        processes.map((p: Process) => p.id === id ? { ...p, name: newName } : p),
+        false
+      )
+      
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/processes/${id}/rename`, { name: newName })
-      setProcesses(processes.map(p => p.id === id ? { ...p, name: newName } : p))
       setEditingId(null)
       setNewName("")
+      mutate() // Revalidate
     } catch (error) {
       console.error("Failed to rename process:", error)
       alert("Failed to rename process")
+      mutate() // Revert on error
     }
   }
 
@@ -81,13 +76,13 @@ export default function ProcessPage() {
             <CardDescription>Your saved process packages</CardDescription>
           </CardHeader>
           <CardContent>
-            {loading ? (
+            {isLoading ? (
               <div>Loading processes...</div>
             ) : processes.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">No saved processes found.</div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {processes.map((process) => (
+                {processes.map((process: Process) => (
                   <div key={process.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow bg-white flex flex-col justify-between gap-4">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2 flex-1 min-w-0">

@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Bell, CheckCircle, Info, AlertTriangle } from 'lucide-react';
 import axios from 'axios';
 import { useUser } from '@clerk/nextjs';
+import useSWR from 'swr';
 
 interface Notification {
   id: number;
@@ -26,37 +27,33 @@ const NotificationIcon = ({ type }: { type: string }) => {
   }
 };
 
+const fetcher = (url: string) => axios.get(url).then(res => res.data);
+
 export default function NotificationsPage() {
   const { user } = useUser();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchNotifications = async () => {
-      if (!user) return;
-      try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/notifications/${user.id}`);
-        setNotifications(response.data);
-      } catch (error) {
-        console.error('Error fetching notifications:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchNotifications();
-  }, [user]);
+  
+  const { data: notifications = [], error, isLoading, mutate } = useSWR(
+    user ? `${process.env.NEXT_PUBLIC_API_URL}/notifications/${user.id}` : null,
+    fetcher
+  );
 
   const markAsRead = async (id: number) => {
     try {
+      // Optimistic update
+      mutate(
+        notifications.map((n: Notification) => n.id === id ? { ...n, read: true } : n),
+        false
+      );
+      
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/notifications/${id}/read`);
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+      mutate(); // Revalidate
     } catch (error) {
       console.error('Error marking notification as read:', error);
+      mutate(); // Revert on error
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return <div className="p-8 text-center">Loading notifications...</div>;
   }
 
@@ -73,7 +70,7 @@ export default function NotificationsPage() {
         {notifications.length === 0 ? (
             <div className="p-8 text-center text-gray-500">No notifications yet.</div>
         ) : (
-            notifications.map((notification) => (
+            notifications.map((notification: Notification) => (
             <div 
                 key={notification.id} 
                 className={`p-4 flex gap-4 hover:bg-gray-50 transition-colors ${!notification.read ? 'bg-blue-50/50' : ''}`}

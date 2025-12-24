@@ -5,8 +5,11 @@ import { useUser } from "@clerk/nextjs"
 import { useUserRole } from "@/context/UserRoleContext"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
 import axios from "axios"
-import { Loader2 } from "lucide-react"
+import { Loader2, Users, Plus, Trash2 } from "lucide-react"
 
 interface User {
   id: number
@@ -16,35 +19,163 @@ interface User {
   last_name: string
   role: string
   created_at: string
+  image_url?: string
+}
+
+interface Project {
+  id: number
+  user_id: string
+  name: string
+  process_id: number
+  version_name: string
+  created_at: string
+  collaborators?: { user_id: string; role: string }[]
+}
+
+function ProjectAccessDialog({ project, users, onUpdate }: { project: Project, users: User[], onUpdate: () => void }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [selectedUserId, setSelectedUserId] = useState("")
+  const [selectedRole, setSelectedRole] = useState("viewer")
+  const [isAdding, setIsAdding] = useState(false)
+
+  const handleAddCollaborator = async () => {
+    if (!selectedUserId) return
+    setIsAdding(true)
+    try {
+      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/projects/${project.id}/collaborators`, {
+        user_id: selectedUserId,
+        role: selectedRole
+      })
+      onUpdate()
+      setSelectedUserId("")
+      setSelectedRole("viewer")
+    } catch (error) {
+      console.error("Failed to add collaborator:", error)
+      alert("Failed to add collaborator")
+    } finally {
+      setIsAdding(false)
+    }
+  }
+
+  const collaborators = project.collaborators || []
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+          <Users className="h-4 w-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>Manage Access - {project.name}</DialogTitle>
+          <DialogDescription>
+            Add users to this project and set their permissions.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="grid gap-4 py-4">
+          <div className="flex items-end gap-2">
+            <div className="grid gap-2 flex-1">
+              <Label>Add User</Label>
+              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a user..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {users.filter(u => u.clerk_id !== project.user_id && !collaborators.some(c => c.user_id === u.clerk_id)).map(u => (
+                    <SelectItem key={u.clerk_id} value={u.clerk_id}>
+                      {u.first_name} {u.last_name} ({u.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2 w-[100px]">
+              <Label>Role</Label>
+              <Select value={selectedRole} onValueChange={setSelectedRole}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="viewer">Viewer</SelectItem>
+                  <SelectItem value="editor">Editor</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleAddCollaborator} disabled={!selectedUserId || isAdding}>
+              {isAdding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Current Access</Label>
+            <div className="border rounded-md p-2 space-y-2 max-h-[200px] overflow-y-auto">
+              <div className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded">
+                <span className="font-medium">Owner</span>
+                <span className="text-muted-foreground">
+                  {users.find(u => u.clerk_id === project.user_id)?.email || project.user_id}
+                </span>
+              </div>
+              {collaborators.map((c, i) => {
+                const user = users.find(u => u.clerk_id === c.user_id)
+                return (
+                  <div key={i} className="flex items-center justify-between text-sm p-2 border rounded">
+                    <div className="flex flex-col">
+                      <span className="font-medium">{user ? `${user.first_name} ${user.last_name}` : c.user_id}</span>
+                      <span className="text-xs text-muted-foreground">{user?.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded-full ${c.role === 'editor' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
+                        {c.role}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+              {collaborators.length === 0 && (
+                <div className="text-center text-sm text-muted-foreground py-2">No collaborators</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 export default function AdminPage() {
   const { user } = useUser()
-  const { role, isLoading: isRoleLoading } = useUserRole()
+  const { role, loading: isRoleLoading } = useUserRole()
   const [users, setUsers] = useState<User[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
 
-  useEffect(() => {
-    const fetchUsers = async () => {
-      if (role !== 'admin' || !user) return
+  const fetchData = async () => {
+    if (role !== 'admin' || !user) return
 
-      try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
-          headers: {
-            'X-Clerk-User-Id': user.id
-          }
+    try {
+      const [usersRes, projectsRes] = await Promise.all([
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
+          headers: { 'X-Clerk-User-Id': user.id }
+        }),
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/admin/projects`, {
+          headers: { 'X-Clerk-User-Id': user.id }
         })
-        setUsers(response.data)
-      } catch (error) {
-        console.error("Failed to fetch users:", error)
-      } finally {
-        setIsLoading(false)
-      }
+      ])
+      setUsers(usersRes.data)
+      setProjects(projectsRes.data)
+    } catch (error) {
+      console.error("Failed to fetch data:", error)
+    } finally {
+      setIsLoading(false)
     }
+  }
 
+  useEffect(() => {
     if (!isRoleLoading) {
-      fetchUsers()
+      fetchData()
     }
   }, [role, isRoleLoading, user])
 
@@ -106,6 +237,7 @@ export default function AdminPage() {
                   <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
                     <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">User</th>
                     <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Email</th>
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Projects</th>
                     <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Current Role</th>
                     <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Actions</th>
                   </tr>
@@ -120,6 +252,19 @@ export default function AdminPage() {
                         </div>
                       </td>
                       <td className="p-4 align-middle">{u.email}</td>
+                      <td className="p-4 align-middle">
+                        <div className="flex flex-col gap-1 max-h-[100px] overflow-y-auto">
+                          {projects.filter(p => p.user_id === u.clerk_id).map(p => (
+                            <div key={p.id} className="flex items-center justify-between gap-2 text-xs bg-secondary px-2 py-1 rounded-md whitespace-nowrap">
+                              <span>{p.name} <span className="text-muted-foreground">({p.version_name})</span></span>
+                              <ProjectAccessDialog project={p} users={users} onUpdate={fetchData} />
+                            </div>
+                          ))}
+                          {projects.filter(p => p.user_id === u.clerk_id).length === 0 && (
+                            <span className="text-muted-foreground text-xs italic">No projects</span>
+                          )}
+                        </div>
+                      </td>
                       <td className="p-4 align-middle">
                         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
                           ${u.role === 'admin' ? 'bg-red-100 text-red-800' : 

@@ -68,6 +68,7 @@ interface ProcessCanvasProps {
   setNodes: React.Dispatch<React.SetStateAction<Node[]>>;
   setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
   users: any[];
+  isReadOnly?: boolean;
 }
 
 const LANE_WIDTH = 300;
@@ -82,7 +83,8 @@ const ProcessCanvas = ({
   onConnect,
   setNodes,
   setEdges,
-  users
+  users,
+  isReadOnly = false
 }: ProcessCanvasProps) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
@@ -97,17 +99,20 @@ const ProcessCanvas = ({
   const [editingLaneName, setEditingLaneName] = useState('');
 
   const openNodeDialog = (data: any) => {
+    if (isReadOnly) return;
     setDialogData(data);
     setDialogOpen(true);
   };
 
   const handleRemoveLane = (laneId: string) => {
+    if (isReadOnly) return;
     if (confirm('Are you sure you want to delete this lane?')) {
       setLanes(lanes.filter(l => l.id !== laneId));
     }
   };
 
   const startEditingLane = (lane: { id: string, name: string }) => {
+    if (isReadOnly) return;
     setEditingLaneId(lane.id);
     setEditingLaneName(lane.name);
   };
@@ -120,18 +125,22 @@ const ProcessCanvas = ({
   };
 
   const onEdgeUpdate = useCallback(
-    (oldEdge: Edge, newConnection: Connection) => setEdges((els) => updateEdge(oldEdge, newConnection, els)),
-    [setEdges]
+    (oldEdge: Edge, newConnection: Connection) => {
+        if (isReadOnly) return;
+        setEdges((els) => updateEdge(oldEdge, newConnection, els))
+    },
+    [setEdges, isReadOnly]
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-  }, []);
+    event.dataTransfer.dropEffect = isReadOnly ? 'none' : 'move';
+  }, [isReadOnly]);
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
+      if (isReadOnly) return;
 
       const type = event.dataTransfer.getData('application/reactflow');
       const label = event.dataTransfer.getData('application/reactflow/label');
@@ -157,18 +166,20 @@ const ProcessCanvas = ({
 
       setNodes((nds) => nds.concat(newNode));
     },
-    [reactFlowInstance, setNodes]
+    [reactFlowInstance, setNodes, isReadOnly]
   );
 
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
+    if (isReadOnly) return;
     setSelectedNode(node);
-  }, []);
+  }, [isReadOnly]);
 
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
   }, []);
 
   const handleSaveProperties = (nodeId: string, newData: any) => {
+    if (isReadOnly) return;
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === nodeId) {
@@ -221,9 +232,9 @@ const ProcessCanvas = ({
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
+                onNodesChange={isReadOnly ? undefined : onNodesChange}
+                onEdgesChange={isReadOnly ? undefined : onEdgesChange}
+                onConnect={isReadOnly ? undefined : onConnect}
                 onInit={setReactFlowInstance}
                 onDrop={onDrop}
                 onDragOver={onDragOver}
@@ -232,13 +243,16 @@ const ProcessCanvas = ({
                 onEdgeUpdate={onEdgeUpdate}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
+                nodesDraggable={!isReadOnly}
+                nodesConnectable={!isReadOnly}
+                elementsSelectable={!isReadOnly}
                 defaultEdgeOptions={{ 
                 type: 'editable-step',
                 markerEnd: {
                     type: MarkerType.ArrowClosed,
                 },
                 }}
-                deleteKeyCode={['Backspace', 'Delete']}
+                deleteKeyCode={isReadOnly ? null : ['Backspace', 'Delete']}
                 // fitView // Disable fitView to respect lane coordinates
             >
                 {/* Render Lane Backgrounds */}
@@ -266,7 +280,7 @@ const ProcessCanvas = ({
         </ProcessProvider>
       </div>
 
-      {selectedNode && (
+      {selectedNode && !isReadOnly && (
         <PropertiesPanel 
             selectedNode={selectedNode} 
             onSave={handleSaveProperties} 
@@ -313,6 +327,9 @@ export default function CreateProcessPage() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [lanes, setLanes] = useState<{ id: string; name: string }[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [projectPermission, setProjectPermission] = useState<'owner' | 'editor' | 'viewer' | null>(null);
+
+  const isReadOnly = projectPermission === 'viewer';
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -344,6 +361,20 @@ export default function CreateProcessPage() {
         try {
           const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/project/${projectId}`);
           const projectData = response.data;
+          
+          if (user) {
+             if (projectData.user_id === user.id) {
+                 setProjectPermission('owner');
+             } else {
+                 const collaborator = projectData.collaborators?.find((c: any) => c.user_id === user.id);
+                 if (collaborator) {
+                     setProjectPermission(collaborator.role as any);
+                 } else {
+                     setProjectPermission('viewer');
+                 }
+             }
+          }
+
           if (projectData.sheets && projectData.sheets.length > 0) {
             setSheets(projectData.sheets);
             setActiveSheetId(projectData.sheets[0].id);
@@ -571,23 +602,24 @@ export default function CreateProcessPage() {
   };
 
   useEffect(() => {
-    if (!loading && role === 'viewer') {
-      router.push('/dashboard/process');
-    }
+    // if (!loading && role === 'viewer') {
+    //   router.push('/dashboard/process');
+    // }
   }, [role, loading, router]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-full">Loading...</div>;
   }
 
-  if (role === 'viewer') {
-    return null; 
-  }
+  // if (role === 'viewer') {
+  //   return null; 
+  // }
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col">
       <div className="flex-none p-4 border-b bg-white flex justify-between items-center">
         <h1 className="text-2xl font-bold">{projectId ? 'Edit Project Canvas' : 'Create New Process'}</h1>
+        {!isReadOnly && (
         <div className="flex gap-2">
             {!projectId && <button className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 text-sm font-medium">Save Draft</button>}
             <button 
@@ -598,10 +630,12 @@ export default function CreateProcessPage() {
               {isSaving ? 'Saving...' : (projectId ? 'Save Project' : 'Publish')}
             </button>
         </div>
+        )}
       </div>
       
       <div className="flex-grow flex overflow-hidden relative">
         <ReactFlowProvider>
+          {!isReadOnly && (
           <ProcessSidebar 
             onSaveVersion={handleSaveVersion}
             onLoadFile={handleLoadFile}
@@ -610,6 +644,7 @@ export default function CreateProcessPage() {
             onLoadVersion={handleLoadVersion}
             onAddLane={handleAddLane}
           />
+          )}
           <div className="flex-grow flex flex-col h-full">
              <ProcessCanvas 
                 nodes={nodes}
@@ -622,6 +657,7 @@ export default function CreateProcessPage() {
                 setNodes={setNodes}
                 setEdges={setEdges}
                 users={users}
+                isReadOnly={isReadOnly}
              />
              
              {/* Excel-like Tabs Bar */}

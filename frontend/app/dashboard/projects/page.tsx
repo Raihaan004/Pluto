@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useUser } from "@clerk/nextjs"
@@ -8,6 +8,7 @@ import axios from "axios"
 import { Plus, Folder, Calendar, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import useSWR from 'swr'
 import {
   Dialog,
   DialogContent,
@@ -49,13 +50,12 @@ interface User {
   email: string
 }
 
+const fetcher = (url: string) => axios.get(url).then(res => res.data)
+const fetcherWithHeader = ([url, token]: [string, string]) => axios.get(url, { headers: { "X-Clerk-User-Id": token } }).then(res => res.data)
+
 export default function ProjectsPage() {
   const { user } = useUser()
   const router = useRouter()
-  const [projects, setProjects] = useState<Project[]>([])
-  const [processes, setProcesses] = useState<Process[]>([])
-  const [users, setUsers] = useState<User[]>([])
-  const [loading, setLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   
   // Form State
@@ -63,42 +63,37 @@ export default function ProjectsPage() {
   const [selectedProcessId, setSelectedProcessId] = useState<string>("")
   const [selectedVersion, setSelectedVersion] = useState<string>("")
 
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!user) return
-      try {
-        const [projectsRes, processesRes, usersRes] = await Promise.all([
-          axios.get(`${process.env.NEXT_PUBLIC_API_URL}/projects/${user.id}`),
-          axios.get(`${process.env.NEXT_PUBLIC_API_URL}/processes/${user.id}`),
-          axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
-            headers: { "X-Clerk-User-Id": user.id }
-          })
-        ])
-        setProjects(projectsRes.data)
-        setProcesses(processesRes.data)
-        setUsers(usersRes.data)
-      } catch (error) {
-        console.error("Failed to fetch data:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
+  const { data: projects = [], mutate: mutateProjects, isLoading: loadingProjects } = useSWR(
+    user ? `${process.env.NEXT_PUBLIC_API_URL}/projects/${user.id}` : null,
+    fetcher
+  )
 
-    if (user) {
-      fetchData()
-    }
-  }, [user])
+  const { data: processes = [] } = useSWR(
+    user ? `${process.env.NEXT_PUBLIC_API_URL}/processes/${user.id}` : null,
+    fetcher
+  )
+
+  const { data: users = [] } = useSWR(
+    user ? [`${process.env.NEXT_PUBLIC_API_URL}/users`, user.id] : null,
+    fetcherWithHeader
+  )
+
+  const loading = loadingProjects
+
+
 
   const handleDeleteProject = async (e: React.MouseEvent, projectId: number) => {
     e.stopPropagation() // Prevent navigation
     if (!confirm("Are you sure you want to delete this project?")) return
 
     try {
+      mutateProjects(projects.filter((p: Project) => p.id !== projectId), false)
       await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/projects/${projectId}`)
-      setProjects(projects.filter(p => p.id !== projectId))
+      mutateProjects()
     } catch (error) {
       console.error("Failed to delete project:", error)
       alert("Failed to delete project")
+      mutateProjects()
     }
   }
 
@@ -114,8 +109,7 @@ export default function ProjectsPage() {
       })
       
       // Refresh projects
-      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/projects/${user.id}`)
-      setProjects(res.data)
+      mutateProjects()
       setIsDialogOpen(false)
       setProjectName("")
       setSelectedProcessId("")
