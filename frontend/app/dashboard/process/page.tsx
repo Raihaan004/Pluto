@@ -27,7 +27,7 @@ export default function ProcessPage() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [newName, setNewName] = useState("")
 
-  const { data: processes = [], error, isLoading, mutate } = useSWR(
+  const { data: processes = [], error, isLoading, mutate } = useSWR<Process[]>(
     user ? `${process.env.NEXT_PUBLIC_API_URL}/processes/${user.id}` : null,
     fetcher
   )

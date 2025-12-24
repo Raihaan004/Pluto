@@ -63,17 +63,17 @@ export default function ProjectsPage() {
   const [selectedProcessId, setSelectedProcessId] = useState<string>("")
   const [selectedVersion, setSelectedVersion] = useState<string>("")
 
-  const { data: projects = [], mutate: mutateProjects, isLoading: loadingProjects } = useSWR(
+  const { data: projects = [], mutate: mutateProjects, isLoading: loadingProjects } = useSWR<Project[]>(
     user ? `${process.env.NEXT_PUBLIC_API_URL}/projects/${user.id}` : null,
     fetcher
   )
 
-  const { data: processes = [] } = useSWR(
+  const { data: processes = [] } = useSWR<Process[]>(
     user ? `${process.env.NEXT_PUBLIC_API_URL}/processes/${user.id}` : null,
     fetcher
   )
 
-  const { data: users = [] } = useSWR(
+  const { data: users = [] } = useSWR<User[]>(
     user ? [`${process.env.NEXT_PUBLIC_API_URL}/users`, user.id] : null,
     fetcherWithHeader
   )

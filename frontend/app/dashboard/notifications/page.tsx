@@ -32,7 +32,7 @@ const fetcher = (url: string) => axios.get(url).then(res => res.data);
 export default function NotificationsPage() {
   const { user } = useUser();
   
-  const { data: notifications = [], error, isLoading, mutate } = useSWR(
+  const { data: notifications = [], error, isLoading, mutate } = useSWR<Notification[]>(
     user ? `${process.env.NEXT_PUBLIC_API_URL}/notifications/${user.id}` : null,
     fetcher
   );
