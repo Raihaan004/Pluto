@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Handle, Position, NodeResizer } from 'reactflow';
-import { Link as LinkIcon, FileText, Users, CheckSquare, BookOpen, Paperclip, AlignLeft } from 'lucide-react';
+import { Link as LinkIcon, FileText, Users, CheckSquare, BookOpen, Paperclip, AlignLeft, MessageSquare } from 'lucide-react';
 import { useProcessContext } from '@/context/ProcessContext';
 
 const MultiHandles = ({ colorClass }: { colorClass: string }) => {
@@ -40,8 +40,11 @@ const NodeIcons = ({ data }: { data: any }) => {
   const hasChecklists = data.checklists && data.checklists.length > 0;
   const hasRoles = (data.roles && data.roles.length > 0) || (data.responsibility && data.responsibility.length > 0) || (data.support && data.support.length > 0);
   const hasDescription = data.description && data.description.trim().length > 0;
+  const hasVerificationComments = data.verificationComments && data.verificationComments.trim().length > 0;
+  const hasAuthorComments = data.authorComments && data.authorComments.trim().length > 0;
+  const hasComments = hasVerificationComments || hasAuthorComments;
 
-  if (!hasLinks && !hasTemplates && !hasGuidelines && !hasChecklists && !hasRoles && !hasDescription) return null;
+  if (!hasLinks && !hasTemplates && !hasGuidelines && !hasChecklists && !hasRoles && !hasDescription && !hasComments) return null;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent node selection
@@ -56,6 +59,32 @@ const NodeIcons = ({ data }: { data: any }) => {
       {hasGuidelines && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-green-50" title="Has Guidelines"><BookOpen className="w-3 h-3 text-green-600" /></div>}
       {hasChecklists && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-purple-50" title="Has Checklists"><CheckSquare className="w-3 h-3 text-purple-600" /></div>}
       {hasRoles && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-gray-50" title="Has Roles/Responsibility"><Users className="w-3 h-3 text-gray-600" /></div>}
+      {hasComments && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-yellow-50" title="Has Comments"><MessageSquare className="w-3 h-3 text-yellow-600" /></div>}
+    </div>
+  );
+};
+
+const StatusIndicator = ({ state }: { state: string }) => {
+  // Default to Draft if no state
+  const currentState = state || 'Draft';
+  
+  let label = 'D';
+  let bgClass = 'bg-gray-200';
+  let textClass = 'text-gray-700';
+  
+  if (currentState === 'Review') {
+    label = 'R';
+    bgClass = 'bg-yellow-200';
+    textClass = 'text-yellow-800';
+  } else if (currentState === 'Published') {
+    label = 'P';
+    bgClass = 'bg-green-200';
+    textClass = 'text-green-800';
+  }
+
+  return (
+    <div className={`absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ${bgClass} ${textClass}`} title={`Status: ${currentState}`}>
+      {label}
     </div>
   );
 };
@@ -102,6 +131,7 @@ const ActivityNode = ({ data, selected }: any) => {
         }}
       >
         <NodeIcons data={data} />
+        <StatusIndicator state={data.state} />
         <div 
           className="text-sm"
           style={{
@@ -138,6 +168,9 @@ const DecisionNode = ({ data, selected }: any) => {
            {/* Icons need to be positioned carefully in diamond */}
            <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-auto">
               <NodeIcons data={data} />
+           </div>
+           <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-auto">
+              <StatusIndicator state={data.state} />
            </div>
            <div 
               className="text-sm rotate-0 px-6"
@@ -177,6 +210,7 @@ const ProcessNode = ({ data, selected }: any) => {
         }}
       >
         <NodeIcons data={data} />
+        <StatusIndicator state={data.state} />
         <div 
           className="text-sm"
           style={{
@@ -207,6 +241,7 @@ const DocumentNode = ({ data, selected }: any) => {
         }}
       >
         <NodeIcons data={data} />
+        <StatusIndicator state={data.state} />
         <div 
           className="text-sm"
           style={{

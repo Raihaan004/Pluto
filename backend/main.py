@@ -81,7 +81,8 @@ def get_all_users(requester_id: Optional[str] = Header(None, alias="X-Clerk-User
         raise HTTPException(status_code=401, detail="Missing user ID header")
 
     try:
-        response = supabase.table("users").select("*").order("created_at", desc=True).execute()
+        # Optimize: Select only necessary fields to reduce payload size
+        response = supabase.table("users").select("clerk_id, first_name, last_name, email, image_url, role").order("created_at", desc=True).execute()
         return response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -130,16 +131,50 @@ def mark_notification_read(notification_id: int):
 
 @app.get("/dashboard-stats/{clerk_id}")
 def get_dashboard_stats(clerk_id: str):
-    # Mock data for now, replace with real DB queries later
-    return {
-        "tasks_assigned": 12,
-        "projects_pending": 3,
-        "notifications": [
-            {"id": 1, "message": "New project assigned", "time": "2h ago"},
+    try:
+        # 1. Fetch recent notifications
+        notif_response = supabase.table("notifications").select("*").eq("user_id", clerk_id).order("created_at", desc=True).limit(5).execute()
+        notifications = notif_response.data if notif_response.data else []
 
-            {"id": 2, "message": "Meeting at 3 PM", "time": "5h ago"}
-        ]
-    }
+        # 2. Fetch projects count (where user is owner)
+        # Note: JSONB filtering for collaborators is complex in simple query, 
+        # for now we'll just count projects owned by user + projects where they are a collaborator
+        # This is a simplified approach.
+        
+        # Get projects owned by user
+        owned_projects = supabase.table("projects").select("id", count="exact").eq("user_id", clerk_id).execute()
+        owned_count = owned_projects.count if owned_projects.count else 0
+        
+        # Get all projects to check collaborators (inefficient for large DBs, but fine for prototype)
+        # A better way would be to use a Postgres function or advanced filter
+        all_projects = supabase.table("projects").select("collaborators").execute()
+        collab_count = 0
+        if all_projects.data:
+            for p in all_projects.data:
+                collabs = p.get("collaborators", [])
+                # Check if user is in collaborators list
+                if any(c.get("clerk_id") == clerk_id for c in collabs):
+                    collab_count += 1
+
+        total_projects = owned_count + collab_count
+
+        # 3. Calculate tasks assigned (based on 'assignment' type notifications)
+        # This is a proxy metric for now
+        tasks_count = sum(1 for n in notifications if n.get("type") == "assignment")
+
+        return {
+            "tasks_assigned": tasks_count,
+            "projects_pending": total_projects,
+            "notifications": notifications
+        }
+    except Exception as e:
+        print(f"Error fetching dashboard stats: {e}")
+        # Return empty structure on error to prevent frontend crash
+        return {
+            "tasks_assigned": 0,
+            "projects_pending": 0,
+            "notifications": []
+        }
 
 @app.post("/processes")
 def create_process(process: ProcessPackageCreate):
@@ -148,7 +183,8 @@ def create_process(process: ProcessPackageCreate):
         data = {
             "user_id": process.user_id,
             "name": process.name,
-            "sheets": [sheet.model_dump() for sheet in process.sheets]
+            "sheets": [sheet.model_dump() for sheet in process.sheets],
+            "status": process.status
         }
         
         response = supabase.table("processes").insert(data).execute()
@@ -157,11 +193,39 @@ def create_process(process: ProcessPackageCreate):
         print(f"Error creating process: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.put("/processes/{process_id}")
+def update_process(process_id: int, process: ProcessPackageCreate):
+    try:
+        data = {
+            "name": process.name,
+            "sheets": [sheet.model_dump() for sheet in process.sheets],
+            "updated_at": "now()",
+            "status": process.status
+        }
+        response = supabase.table("processes").update(data).eq("id", process_id).execute()
+        return {"status": "updated", "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/processes/{user_id}")
 def get_processes(user_id: str):
     try:
         response = supabase.table("processes").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
-        return response.data
+        
+        # Optimize payload: Remove heavy 'sheets' data
+        cleaned_data = []
+        for process in response.data:
+            p = process.copy()
+            p.pop("sheets", None)
+            
+            # Clean versions
+            if "versions" in p and isinstance(p["versions"], list):
+                for v in p["versions"]:
+                    if isinstance(v, dict):
+                        v.pop("sheets", None)
+            cleaned_data.append(p)
+            
+        return cleaned_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -254,31 +318,26 @@ def create_project(project: ProjectCreate):
 @app.get("/projects/{user_id}")
 def get_projects(user_id: str):
     try:
-        # 1. Owned projects
-        owned = supabase.table("projects").select("*").eq("user_id", user_id).execute()
+        import json
+        # Optimize: Fetch owned and shared projects in a single query using OR
+        # This reduces database round trips and latency
         
-        # 2. Shared projects
-        shared_data = []
-        try:
-            # Use json.dumps to ensure the list of dicts is passed as a string to the contains filter
-            import json
-            shared = supabase.table("projects").select("*").contains("collaborators", json.dumps([{"user_id": user_id}])).execute()
-            shared_data = shared.data
-        except Exception as e:
-            print(f"Warning: Could not fetch shared projects: {e}")
+        # Construct the JSON string for the contains filter
+        collaborator_tag = json.dumps([{"user_id": user_id}])
         
-        # Merge and sort
-        all_projects = owned.data + shared_data
-        # Remove duplicates based on id if any
-        seen = set()
-        unique_projects = []
-        for p in all_projects:
-            if p['id'] not in seen:
-                seen.add(p['id'])
-                unique_projects.append(p)
-                
-        unique_projects.sort(key=lambda x: x['created_at'], reverse=True)
-        return unique_projects
+        # Use the or_ filter: user_id.eq.UID,collaborators.cs.TAG
+        response = supabase.table("projects").select("*").or_(
+            f"user_id.eq.{user_id},collaborators.cs.{collaborator_tag}"
+        ).order("created_at", desc=True).execute()
+        
+        # Optimize payload: Remove heavy 'sheets' data
+        cleaned_data = []
+        for project in response.data:
+            p = project.copy()
+            p.pop("sheets", None)
+            cleaned_data.append(p)
+        
+        return cleaned_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -335,7 +394,15 @@ def get_all_projects(requester_id: Optional[str] = Header(None, alias="X-Clerk-U
     if not requester_id:
         raise HTTPException(status_code=401, detail="Missing user ID header")
         
-    # Check if requester is admin
+    # Ch
+        # Optimize payload: Remove heavy 'sheets' data
+        cleaned_data = []
+        for project in response.data:
+            p = project.copy()
+            p.pop("sheets", None)
+            cleaned_data.append(p)
+            
+        return cleaned_ is admin
     requester = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
     if not requester.data or requester.data[0]["role"] != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -446,6 +513,14 @@ def reject_notification(notification_id: int):
         # Just mark as read for now, or delete
         supabase.table("notifications").update({"read": True}).eq("id", notification_id).execute()
         return {"status": "rejected"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/notifications/{notification_id}")
+def delete_notification(notification_id: int):
+    try:
+        response = supabase.table("notifications").delete().eq("id", notification_id).execute()
+        return {"status": "deleted", "data": response.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

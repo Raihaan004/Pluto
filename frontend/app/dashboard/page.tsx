@@ -1,10 +1,12 @@
 import { auth } from "@clerk/nextjs/server"
 import { UserSync } from "@/components/UserSync"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Bell, FileText, Calendar, FileInput } from "lucide-react"
+import { Bell, FileText, Calendar, FileInput, CheckCircle, AlertTriangle, Info, ArrowRight } from "lucide-react"
 import { BentoGrid, BentoCard } from "@/components/magicui/bento-grid"
-import { AnimatedList } from "@/components/magicui/animated-list"
 import { cn } from "@/lib/utils"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { formatDistanceToNow } from "date-fns"
 
 // Mock data fetcher since we might not have the backend running perfectly yet
 async function getDashboardData(userId: string) {
@@ -15,6 +17,7 @@ async function getDashboardData(userId: string) {
     if (!res.ok) throw new Error('Failed to fetch')
     return res.json()
   } catch (error) {
+    console.error("Error fetching dashboard data:", error)
     return {
       tasks_assigned: 0,
       projects_pending: 0,
@@ -23,48 +26,33 @@ async function getDashboardData(userId: string) {
   }
 }
 
-interface NotificationItem {
-  name: string;
-  description: string;
-  icon: string;
-  color: string;
-  time: string;
-}
+const NotificationItem = ({ notification }: { notification: any }) => {
+  const getIcon = (type: string) => {
+    switch (type) {
+      case 'success': return <CheckCircle className="w-5 h-5 text-green-500" />;
+      case 'warning': return <AlertTriangle className="w-5 h-5 text-yellow-500" />;
+      case 'invitation': return <Bell className="w-5 h-5 text-purple-500" />;
+      default: return <Info className="w-5 h-5 text-blue-500" />;
+    }
+  };
 
-const Notification = ({ name, description, icon, color, time }: NotificationItem) => {
   return (
-    <figure
-      className={cn(
-        "relative mx-auto min-h-fit w-full max-w-100 cursor-pointer overflow-hidden rounded-2xl p-4",
-        // animation styles
-        "transition-all duration-200 ease-in-out hover:scale-[1.03]",
-        // light styles
-        "bg-white [box-shadow:0_0_0_1px_rgba(0,0,0,.03),0_2px_4px_rgba(0,0,0,.05),0_12px_24px_rgba(0,0,0,.05)]",
-        // dark styles
-        "transform-gpu dark:bg-transparent dark:backdrop-blur-md dark:[border:1px_solid_rgba(255,255,255,.1)] dark:[box-shadow:0_-20px_80px_-20px_#ffffff1f_inset]",
-      )}
-    >
-      <div className="flex flex-row items-center gap-3">
-        <div
-          className="flex size-10 items-center justify-center rounded-2xl"
-          style={{
-            backgroundColor: color,
-          }}
-        >
-          <span className="text-lg">{icon}</span>
-        </div>
-        <div className="flex flex-col overflow-hidden">
-          <figcaption className="flex flex-row items-center whitespace-pre text-lg font-medium dark:text-white ">
-            <span className="text-sm sm:text-lg">{name}</span>
-            <span className="mx-1">·</span>
-            <span className="text-xs text-gray-500">{time}</span>
-          </figcaption>
-          <p className="text-sm font-normal dark:text-white/60">
-            {description}
-          </p>
-        </div>
+    <div className="flex items-start gap-4 p-4 rounded-xl bg-gray-50/50 hover:bg-gray-50 transition-colors border border-gray-100">
+      <div className="mt-1 bg-white p-2 rounded-full shadow-sm">
+        {getIcon(notification.type)}
       </div>
-    </figure>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-900 truncate">
+          {notification.title}
+        </p>
+        <p className="text-sm text-gray-500 mt-1 line-clamp-2">
+          {notification.message}
+        </p>
+        <p className="text-xs text-gray-400 mt-2">
+          {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
+        </p>
+      </div>
+    </div>
   );
 };
 
@@ -72,26 +60,24 @@ export default async function DashboardPage() {
   const { userId } = await auth()
   const data = await getDashboardData(userId || "")
 
-  const features = [
+  const stats = [
     {
       Icon: FileText,
-      name: "Tasks Assigned",
+      name: `${data.tasks_assigned} Tasks Assigned`,
       description: "Tasks requiring your attention",
       href: "/dashboard/tasks",
       cta: "View Tasks",
-      background: <div className="absolute -right-20 -top-20 opacity-60" />,
+      background: <div className="absolute -right-20 -top-20 opacity-60 bg-blue-100 w-64 h-64 rounded-full blur-3xl" />,
       className: "lg:col-span-1 lg:row-span-1",
-      value: data.tasks_assigned
     },
     {
       Icon: FileInput,
-      name: "Pending Projects",
+      name: `${data.projects_pending} Pending Projects`,
       description: "Projects in progress",
       href: "/dashboard/projects",
       cta: "View Projects",
-      background: <div className="absolute -right-20 -top-20 opacity-60" />,
+      background: <div className="absolute -right-20 -top-20 opacity-60 bg-purple-100 w-64 h-64 rounded-full blur-3xl" />,
       className: "lg:col-span-1 lg:row-span-1",
-      value: data.projects_pending
     },
     {
       Icon: Calendar,
@@ -99,72 +85,79 @@ export default async function DashboardPage() {
       description: "Stay on top of your schedule",
       href: "/dashboard/calendar",
       cta: "View Calendar",
-      background: <div className="absolute -right-20 -top-20 opacity-60" />,
+      background: <div className="absolute -right-20 -top-20 opacity-60 bg-pink-100 w-64 h-64 rounded-full blur-3xl" />,
       className: "lg:col-span-1 lg:row-span-1",
-      value: "3" // Mock value
     },
   ];
 
-  // Transform notifications for AnimatedList
-  const notifications = data.notifications.length > 0 ? data.notifications.map((n: any) => ({
-    name: "System",
-    description: n.message,
-    time: n.time,
-    icon: "🔔",
-    color: "#00C9A7",
-  })) : [
-    {
-      name: "System",
-      description: "Welcome to Pluto!",
-      time: "Just now",
-      icon: "👋",
-      color: "#FFB800",
-    }
-  ];
-
   return (
-    <div className="flex flex-col gap-6 p-8">
+    <div className="p-8 space-y-8 max-w-7xl mx-auto">
       <UserSync />
-      <h1 className="text-3xl font-bold">Dashboard</h1>
       
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-        {/* Main Content - Stats with Bento Grid */}
-        <div className="col-span-2 flex flex-col gap-6">
-          <BentoGrid className="lg:grid-rows-1">
-            {features.map((feature) => (
-              <BentoCard 
-                key={feature.name} 
-                {...feature} 
-                description={`${feature.description} (${feature.value})`}
-              />
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Dashboard</h1>
+          <p className="text-gray-500 mt-2">Welcome back! Here's an overview of your projects.</p>
+        </div>
+        <Button asChild className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg">
+            <Link href="/dashboard/process/create">
+                + New Project
+            </Link>
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Stats Grid */}
+        <div className="lg:col-span-2 space-y-8">
+            <BentoGrid className="grid-rows-[auto]">
+            {stats.map((stat) => (
+                <BentoCard key={stat.name} {...stat} />
             ))}
-          </BentoGrid>
-          
-          {/* Placeholder for other dashboard content */}
-          <Card className="h-64 flex items-center justify-center text-muted-foreground bg-white/50 backdrop-blur-sm">
-            Chart or Activity Feed Placeholder
-          </Card>
+            </BentoGrid>
+
+            {/* Activity Feed / Chart Placeholder */}
+            <Card className="border-none shadow-md bg-white/50 backdrop-blur-sm overflow-hidden">
+                <CardHeader>
+                    <CardTitle>Activity Overview</CardTitle>
+                    <CardDescription>Your recent activity and project progress.</CardDescription>
+                </CardHeader>
+                <CardContent className="h-[300px] flex items-center justify-center bg-gray-50/50 m-6 rounded-xl border border-dashed border-gray-200">
+                    <div className="text-center text-gray-400">
+                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <FileText className="w-8 h-8" />
+                        </div>
+                        <p>Activity chart coming soon</p>
+                    </div>
+                </CardContent>
+            </Card>
         </div>
 
-        {/* Right Side - Notifications with Animated List */}
-        <div className="col-span-1">
-          <Card className="h-full border-none shadow-none bg-transparent">
-            <CardHeader className="border-b pb-4 px-0">
-              <div className="flex items-center gap-2">
-                <Bell className="h-5 w-5" />
-                <CardTitle>Notifications</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-6 px-0">
-              <div className="relative flex h-125 w-full flex-col p-6 overflow-hidden rounded-lg border bg-background md:shadow-xl">
-                <AnimatedList>
-                  {notifications.map((item: NotificationItem, idx: number) => (
-                    <Notification {...item} key={idx} />
-                  ))}
-                </AnimatedList>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Notifications Panel */}
+        <div className="lg:col-span-1">
+            <Card className="h-full border-none shadow-md bg-white/80 backdrop-blur-sm">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="text-xl font-bold flex items-center gap-2">
+                        <Bell className="w-5 h-5 text-blue-600" />
+                        Notifications
+                    </CardTitle>
+                    <Button variant="ghost" size="sm" asChild className="text-xs text-blue-600 hover:text-blue-700">
+                        <Link href="/dashboard/notifications">View All</Link>
+                    </Button>
+                </CardHeader>
+                <CardContent className="p-0">
+                    <div className="flex flex-col divide-y divide-gray-100">
+                        {data.notifications && data.notifications.length > 0 ? (
+                            data.notifications.map((notification: any) => (
+                                <NotificationItem key={notification.id} notification={notification} />
+                            ))
+                        ) : (
+                            <div className="p-8 text-center text-gray-500">
+                                <p>No new notifications</p>
+                            </div>
+                        )}
+                    </div>
+                </CardContent>
+            </Card>
         </div>
       </div>
     </div>

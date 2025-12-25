@@ -164,10 +164,6 @@ export const ProcessSidebar = ({
       </div>
     </div>
 
-      <div className={cn("mt-auto border-t pt-4", !isOpen && "hidden")}>
-        <div className="font-bold text-sm text-gray-500 mb-2">Properties</div>
-        <div className="text-xs text-gray-400 italic">Select an element to view properties</div>
-      </div>
     </aside>
   );
 };

@@ -1,8 +1,51 @@
 import Link from "next/link"
-import { ArrowRight } from "lucide-react"
+import { ArrowRight, FileText, Users, Shield, Zap, CheckCircle, Globe } from "lucide-react"
 import { DotPattern } from "@/components/magicui/dot-pattern"
-import { cn } from "@/lib/utils"
+import { Particles } from "@/components/magicui/particles"
+import { BentoGrid, BentoCard } from "@/components/magicui/bento-grid"
 import { Marquee } from "@/components/magicui/marquee"
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
+
+const features = [
+  {
+    Icon: FileText,
+    name: "Process Management",
+    description: "Design, version, and manage your FuSa processes with our intuitive drag-and-drop editor.",
+    href: "/dashboard/process",
+    cta: "Start Designing",
+    background: <div className="absolute -right-20 -top-20 opacity-60" />,
+    className: "lg:col-span-1 lg:row-span-1",
+  },
+  {
+    Icon: Users,
+    name: "Real-time Collaboration",
+    description: "Work together with your team in real-time. Assign roles, track changes, and communicate seamlessly.",
+    href: "/dashboard/projects",
+    cta: "Invite Team",
+    background: <div className="absolute -right-20 -top-20 opacity-60" />,
+    className: "lg:col-span-2 lg:row-span-1",
+  },
+  {
+    Icon: Shield,
+    name: "FuSa Compliance",
+    description: "Built-in templates and checks to ensure your projects meet ISO 26262 and other safety standards.",
+    href: "/dashboard/help",
+    cta: "Learn Standards",
+    background: <div className="absolute -right-20 -top-20 opacity-60" />,
+    className: "lg:col-span-2 lg:row-span-1",
+  },
+  {
+    Icon: Zap,
+    name: "Instant Notifications",
+    description: "Stay updated with real-time alerts for task assignments, project updates, and deadlines.",
+    href: "/dashboard/notifications",
+    cta: "View Alerts",
+    background: <div className="absolute -right-20 -top-20 opacity-60" />,
+    className: "lg:col-span-1 lg:row-span-1",
+  },
+];
 
 const reviews = [
   {
@@ -81,7 +124,8 @@ const ReviewCard = ({
 
 export default function LandingPage() {
   return (
-    <div className="flex min-h-screen flex-col relative overflow-hidden">
+    <div className="flex min-h-screen flex-col relative overflow-hidden bg-white">
+      {/* Background Elements */}
       <DotPattern
         width={20}
         height={20}
@@ -89,62 +133,188 @@ export default function LandingPage() {
         cy={1}
         cr={1}
         className={cn(
-          "[mask-image:linear-gradient(to_bottom_right,white,transparent,transparent)] "
+          "[mask-image:linear-gradient(to_bottom_right,white,transparent,transparent)] opacity-50"
         )}
       />
-      <header className="flex h-16 items-center justify-between border-b px-6 lg:px-12 bg-white/50 backdrop-blur-sm z-10">
-        <div className="text-2xl font-bold">Pluto</div>
-        <nav className="flex gap-4">
-          <Link href="/sign-in" className="text-sm font-medium hover:underline">
-            Login
+      <Particles
+        className="absolute inset-0 z-0"
+        quantity={100}
+        ease={80}
+        color="#000000"
+        refresh
+      />
+
+      {/* Navbar */}
+      <header className="flex h-16 items-center justify-between border-b px-6 lg:px-12 bg-white/80 backdrop-blur-md z-50 sticky top-0">
+        <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">P</div>
+            <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">Pluto</span>
+        </div>
+        <nav className="flex gap-6 items-center">
+          <Link href="#features" className="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors">
+            Features
           </Link>
-          <Link
-            href="/dashboard"
-            className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
-          >
-            Get Started
+          <Link href="#testimonials" className="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors">
+            Testimonials
           </Link>
+          <SignedOut>
+            <Button variant="ghost" className="text-gray-700 hover:text-blue-600" asChild>
+              <Link href="/sign-in">Login</Link>
+            </Button>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6" asChild>
+              <Link href="/sign-up">Get Started</Link>
+            </Button>
+          </SignedOut>
+          <SignedIn>
+            <Button variant="ghost" className="text-gray-700 hover:text-blue-600" asChild>
+              <Link href="/dashboard">Dashboard</Link>
+            </Button>
+            <UserButton />
+          </SignedIn>
         </nav>
       </header>
+
       <main className="flex-1 z-10">
-        <section className="flex flex-col items-center justify-center gap-6 py-24 text-center lg:py-32 relative">
-           <div className="z-10 flex flex-col items-center gap-6">
-            <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
-              Manage your projects with <span className="text-blue-600">Pluto</span>
-            </h1>
-            <p className="max-w-150 text-lg text-gray-500">
-              Streamline your workflow, track tasks, and collaborate with your team in one place.
-            </p>
-            <div className="flex gap-4">
-              <Link
-                href="/dashboard"
-                className="flex items-center gap-2 rounded-md bg-black px-6 py-3 text-base font-medium text-white hover:bg-gray-800"
-              >
-                Go to Dashboard <ArrowRight className="h-4 w-4" />
+        {/* Hero Section */}
+        <section className="relative pt-20 pb-32 px-6 lg:px-12 flex flex-col items-center text-center">
+          <div className="inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium bg-blue-50 text-blue-600 mb-6">
+            <span className="flex h-2 w-2 rounded-full bg-blue-600 mr-2"></span>
+            New: Advanced Analytics Dashboard
+          </div>
+          
+          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-gray-900 mb-6 max-w-4xl">
+            Streamline Your <br />
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600">
+              FuSa Processes
+            </span>
+          </h1>
+          
+          <p className="text-xl text-gray-600 max-w-2xl mb-10 leading-relaxed">
+            The all-in-one platform for Functional Safety management. Design processes, collaborate with your team, and ensure compliance with ISO 26262 effortlessly.
+          </p>
+          
+          <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+            <SignedOut>
+              <Button size="lg" className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-full px-8 h-12 text-lg shadow-lg hover:shadow-xl transition-all" asChild>
+                <Link href="/sign-up">
+                  Start for Free <ArrowRight className="ml-2 h-5 w-5" />
+                </Link>
+              </Button>
+            </SignedOut>
+            <SignedIn>
+              <Button size="lg" className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-full px-8 h-12 text-lg shadow-lg hover:shadow-xl transition-all" asChild>
+                <Link href="/dashboard">
+                  Go to Dashboard <ArrowRight className="ml-2 h-5 w-5" />
+                </Link>
+              </Button>
+            </SignedIn>
+            <Button size="lg" variant="outline" className="w-full sm:w-auto rounded-full px-8 h-12 text-lg border-gray-300 hover:bg-gray-50" asChild>
+              <Link href="#features">
+                View Demo
               </Link>
-            </div>
+            </Button>
+          </div>
+
+          {/* Hero Image / Dashboard Preview */}
+          <div className="mt-20 relative w-full max-w-5xl mx-auto rounded-xl border bg-white/50 shadow-2xl overflow-hidden backdrop-blur-sm p-2">
+             <div className="rounded-lg overflow-hidden border bg-gray-50 aspect-[16/9] flex items-center justify-center relative group">
+                <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/10 to-purple-500/10 z-0"></div>
+                {/* Placeholder for dashboard screenshot */}
+                <div className="z-10 text-center">
+                    <div className="w-20 h-20 bg-white rounded-2xl shadow-lg mx-auto mb-4 flex items-center justify-center">
+                        <Zap className="w-10 h-10 text-yellow-500" />
+                    </div>
+                    <p className="text-gray-500 font-medium">Interactive Dashboard Preview</p>
+                </div>
+             </div>
           </div>
         </section>
 
-        <section className="py-12">
-           <div className="relative flex h-125 w-full flex-col items-center justify-center overflow-hidden rounded-lg bg-background md:shadow-xl">
-            <Marquee pauseOnHover className="[--duration:20s]">
-              {firstRow.map((review) => (
-                <ReviewCard key={review.username} {...review} />
+        {/* Features Section */}
+        <section id="features" className="py-24 px-6 lg:px-12 bg-gray-50/50">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-16">
+                <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Everything you need to succeed</h2>
+                <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+                    Powerful features designed to help you manage complex safety lifecycles with ease and precision.
+                </p>
+            </div>
+            
+            <BentoGrid className="lg:grid-rows-2">
+              {features.map((feature) => (
+                <BentoCard key={feature.name} {...feature} />
               ))}
-            </Marquee>
-            <Marquee reverse pauseOnHover className="[--duration:20s]">
-              {secondRow.map((review) => (
-                <ReviewCard key={review.username} {...review} />
-              ))}
-            </Marquee>
-            <div className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-linear-to-r from-white dark:from-background"></div>
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-linear-to-l from-white dark:from-background"></div>
+            </BentoGrid>
           </div>
         </section>
+
+        {/* Testimonials Section */}
+        <section id="testimonials" className="py-24 px-6 lg:px-12 overflow-hidden">
+            <div className="text-center mb-12">
+                <h2 className="text-3xl font-bold text-gray-900">Trusted by Safety Experts</h2>
+            </div>
+            <div className="relative flex h-[300px] w-full flex-col items-center justify-center overflow-hidden rounded-lg">
+                <Marquee pauseOnHover className="[--duration:20s]">
+                    {firstRow.map((review) => (
+                    <ReviewCard key={review.username} {...review} />
+                    ))}
+                </Marquee>
+                <Marquee reverse pauseOnHover className="[--duration:20s]">
+                    {secondRow.map((review) => (
+                    <ReviewCard key={review.username} {...review} />
+                    ))}
+                </Marquee>
+                <div className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-white dark:from-background"></div>
+                <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-gradient-to-l from-white dark:from-background"></div>
+            </div>
+        </section>
+
+        {/* CTA Section */}
+        <section className="py-24 px-6 lg:px-12 bg-gray-900 text-white relative overflow-hidden">
+            <Particles
+                className="absolute inset-0 z-0 opacity-30"
+                quantity={50}
+                color="#ffffff"
+                refresh
+            />
+            <div className="max-w-4xl mx-auto text-center relative z-10">
+                <h2 className="text-4xl font-bold mb-6">Ready to transform your workflow?</h2>
+                <p className="text-xl text-gray-300 mb-10">
+                    Join thousands of engineers who trust Pluto for their Functional Safety management.
+                </p>
+                <SignedOut>
+                    <Button size="lg" className="bg-white text-gray-900 hover:bg-gray-100 rounded-full px-8 h-12 text-lg font-semibold" asChild>
+                        <Link href="/sign-up">
+                            Get Started Now
+                        </Link>
+                    </Button>
+                </SignedOut>
+                <SignedIn>
+                    <Button size="lg" className="bg-white text-gray-900 hover:bg-gray-100 rounded-full px-8 h-12 text-lg font-semibold" asChild>
+                        <Link href="/dashboard">
+                            Go to Dashboard
+                        </Link>
+                    </Button>
+                </SignedIn>
+            </div>
+        </section>
       </main>
-      <footer className="border-t py-6 text-center text-sm text-gray-500 bg-white/50 backdrop-blur-sm z-10">
-        © {new Date().getFullYear()} Pluto. All rights reserved.
+
+      <footer className="py-12 px-6 lg:px-12 border-t bg-white">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+            <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-gray-900 rounded flex items-center justify-center text-white text-xs font-bold">P</div>
+                <span className="font-bold text-gray-900">Pluto</span>
+            </div>
+            <div className="flex gap-8 text-sm text-gray-500">
+                <Link href="#" className="hover:text-gray-900">Privacy Policy</Link>
+                <Link href="#" className="hover:text-gray-900">Terms of Service</Link>
+                <Link href="#" className="hover:text-gray-900">Contact</Link>
+            </div>
+            <div className="text-sm text-gray-400">
+                © 2025 Pluto Inc. All rights reserved.
+            </div>
+        </div>
       </footer>
     </div>
   )

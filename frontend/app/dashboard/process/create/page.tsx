@@ -25,14 +25,13 @@ import EditableStepEdge from '@/components/process/EditableStepEdge';
 import { PropertiesPanel } from '@/components/process/PropertiesPanel';
 import { useUserRole } from '@/context/UserRoleContext';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, FileSpreadsheet, Layout } from 'lucide-react';
+import { Plus, FileSpreadsheet, Layout, Undo, Redo, Trash2, Edit2, Check, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUser } from '@clerk/nextjs';
 import axios from 'axios';
 import { ProcessProvider } from '@/context/ProcessContext';
 import { NodeInfoDialog } from '@/components/process/NodeInfoDialog';
 import { ShareProjectDialog } from '@/components/process/ShareProjectDialog';
-import { Trash2, Edit2, Check, X } from 'lucide-react';
 
 const initialNodes = [
   {
@@ -71,6 +70,7 @@ interface ProcessCanvasProps {
   users: any[];
   isReadOnly?: boolean;
   projectId?: string | null;
+  onInit?: (instance: any) => void;
 }
 
 const LANE_WIDTH = 300;
@@ -87,11 +87,18 @@ const ProcessCanvas = ({
   setEdges,
   users,
   isReadOnly = false,
-  projectId
+  projectId,
+  onInit
 }: ProcessCanvasProps) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+
+  useEffect(() => {
+    if (reactFlowInstance && onInit) {
+      onInit(reactFlowInstance);
+    }
+  }, [reactFlowInstance, onInit]);
   
   // Dialog State
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -333,8 +340,62 @@ export default function CreateProcessPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [projectPermission, setProjectPermission] = useState<'owner' | 'editor' | 'viewer' | null>(null);
   const [currentCollaborators, setCurrentCollaborators] = useState<{ user_id: string; role: string }[]>([]);
+  const [rfInstance, setRfInstance] = useState<any>(null);
 
   const isReadOnly = projectPermission === 'viewer';
+
+  // History for Undo/Redo
+  const [history, setHistory] = useState<{nodes: Node[], edges: Edge[]}[]>([]);
+  const [future, setFuture] = useState<{nodes: Node[], edges: Edge[]}[]>([]);
+
+  const saveHistory = useCallback(() => {
+    setHistory(prev => [...prev, { nodes, edges }]);
+    setFuture([]);
+  }, [nodes, edges]);
+
+  const handleUndo = () => {
+    if (history.length === 0) return;
+    const previous = history[history.length - 1];
+    const newHistory = history.slice(0, history.length - 1);
+    
+    setFuture(prev => [{ nodes, edges }, ...prev]);
+    setHistory(newHistory);
+    setNodes(previous.nodes);
+    setEdges(previous.edges);
+  };
+
+  const handleRedo = () => {
+    if (future.length === 0) return;
+    const next = future[0];
+    const newFuture = future.slice(1);
+
+    setHistory(prev => [...prev, { nodes, edges }]);
+    setFuture(newFuture);
+    setNodes(next.nodes);
+    setEdges(next.edges);
+  };
+
+  const handleDelete = () => {
+    if (!rfInstance) return;
+    const selectedNodes = rfInstance.getNodes().filter((n: any) => n.selected);
+    const selectedEdges = rfInstance.getEdges().filter((e: any) => e.selected);
+    
+    if (selectedNodes.length > 0 || selectedEdges.length > 0) {
+        saveHistory();
+        rfInstance.deleteElements({ nodes: selectedNodes, edges: selectedEdges });
+    }
+  };
+
+  // Wrap onNodesChange and onEdgesChange to save history on user interaction
+  // This is tricky because they fire on every drag frame.
+  // We'll rely on manual saveHistory calls or specific events if possible.
+  // For now, let's just add the buttons and basic delete.
+  // To make undo/redo work properly with drag, we need onNodeDragStart/Stop.
+  
+  // We can pass a wrapper to ProcessCanvas
+  const onNodeDragStart = useCallback(() => {
+      saveHistory();
+  }, [saveHistory]);
 
   const fetchProjectData = async () => {
       if (!projectId) return;
@@ -636,6 +697,46 @@ export default function CreateProcessPage() {
     setLanes([]);
     setActiveSheetId(newId);
   };
+
+  const handleSaveDraft = async () => {
+    if (!user) return;
+    setIsSaving(true);
+
+    // Merge current active state into sheets
+    const currentSheets = sheets.map(sheet => {
+      if (sheet.id === activeSheetId) {
+        return { ...sheet, nodes, edges, lanes };
+      }
+      return sheet;
+    });
+
+    try {
+      const payload = {
+        user_id: user.id,
+        name: currentSheets[0].name, // Use parent process name as package name
+        sheets: currentSheets,
+        status: 'draft'
+      };
+
+      if (processId) {
+        await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/processes/${processId}`, payload);
+        alert('Draft Saved Successfully!');
+      } else {
+        const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/processes`, payload);
+        alert('Draft Saved Successfully!');
+        // Redirect to edit mode for the new draft
+        // router.push(`/dashboard/process/create?processId=${response.data.data[0].id}`);
+        router.push('/dashboard/process');
+      }
+      
+    } catch (error) {
+      console.error('Error saving draft:', error);
+      alert('Failed to save draft.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!user) return;
     setIsSaving(true);
@@ -652,7 +753,8 @@ export default function CreateProcessPage() {
       const payload = {
         user_id: user.id,
         name: currentSheets[0].name, // Use parent process name as package name
-        sheets: currentSheets
+        sheets: currentSheets,
+        status: 'published'
       };
 
       if (projectId) {
@@ -661,11 +763,11 @@ export default function CreateProcessPage() {
         alert('Project Canvas Saved Successfully!');
       } else if (processId) {
         await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/processes/${processId}`, payload);
-        alert('Process Package Saved Successfully!');
+        alert('Process Package Published Successfully!');
         router.push('/dashboard/process');
       } else {
         await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/processes`, payload);
-        alert('Process Package Saved Successfully!');
+        alert('Process Package Published Successfully!');
         router.push('/dashboard/process');
       }
       
@@ -705,7 +807,27 @@ export default function CreateProcessPage() {
                     onUpdate={fetchProjectData}
                 />
             )}
-            {!projectId && <button className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 text-sm font-medium">Save Draft</button>}
+            {!projectId && (
+              <>
+                <button onClick={handleUndo} disabled={history.length === 0} className="p-2 hover:bg-gray-200 rounded disabled:opacity-30" title="Undo">
+                  <Undo size={20} />
+                </button>
+                <button onClick={handleRedo} disabled={future.length === 0} className="p-2 hover:bg-gray-200 rounded disabled:opacity-30" title="Redo">
+                  <Redo size={20} />
+                </button>
+                <button onClick={handleDelete} className="p-2 hover:bg-gray-200 rounded text-red-500" title="Delete Selected">
+                  <Trash2 size={20} />
+                </button>
+                <div className="w-px h-6 bg-gray-300 mx-2"></div>
+                <button 
+                  onClick={handleSaveDraft}
+                  disabled={isSaving}
+                  className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 text-sm font-medium disabled:opacity-50"
+                >
+                  {isSaving ? 'Saving...' : 'Save Draft'}
+                </button>
+              </>
+            )}
             <button 
               onClick={handleSave}
               disabled={isSaving}
@@ -737,12 +859,16 @@ export default function CreateProcessPage() {
                 setLanes={setLanes}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
+                onConnect={(params) => {
+                    saveHistory();
+                    onConnect(params);
+                }}
                 setNodes={setNodes}
                 setEdges={setEdges}
                 users={users}
                 isReadOnly={isReadOnly}
                 projectId={projectId}
+                onInit={setRfInstance}
              />
              
              {/* Excel-like Tabs Bar */}

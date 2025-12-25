@@ -6,7 +6,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { ExternalLink, FileText, Info, User as UserIcon, Mail } from 'lucide-react';
+import { ExternalLink, FileText, Info, User as UserIcon, Mail, MessageSquare } from 'lucide-react';
 
 interface User {
   clerk_id: string;
@@ -82,6 +82,29 @@ export const NodeInfoDialog = ({ isOpen, onClose, data, users = [] }: NodeInfoDi
                     {link}
                   </a>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Comments */}
+          {(data.verificationComments || data.authorComments) && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium flex items-center gap-2 text-gray-500">
+                <MessageSquare size={16} /> Comments
+              </h4>
+              <div className="space-y-2">
+                {data.verificationComments && (
+                  <div className="p-3 bg-yellow-50 border border-yellow-100 rounded-md">
+                    <span className="text-xs font-semibold text-yellow-800 uppercase mb-1 block">Verification Comments</span>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{data.verificationComments}</p>
+                  </div>
+                )}
+                {data.authorComments && (
+                  <div className="p-3 bg-blue-50 border border-blue-100 rounded-md">
+                    <span className="text-xs font-semibold text-blue-800 uppercase mb-1 block">Author Comments</span>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{data.authorComments}</p>
+                  </div>
+                )}
               </div>
             </div>
           )}

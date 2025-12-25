@@ -2,12 +2,11 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Workflow, FolderKanban, HelpCircle, Shield, ChevronLeft, ChevronRight, Bell } from "lucide-react"
+import { LayoutDashboard, Workflow, FolderKanban, HelpCircle, Shield, ChevronLeft, ChevronRight, ClipboardList } from "lucide-react"
 import { UserButton, useUser } from "@clerk/nextjs"
 import { cn } from "@/lib/utils"
 import { useUserRole } from "@/context/UserRoleContext"
-import { useState, useEffect } from "react"
-import axios from "axios"
+import { useState } from "react"
 
 const sidebarItems = [
   {
@@ -26,9 +25,9 @@ const sidebarItems = [
     icon: FolderKanban,
   },
   {
-    title: "Notifications",
-    href: "/dashboard/notifications",
-    icon: Bell,
+    title: "Tasks",
+    href: "/dashboard/tasks",
+    icon: ClipboardList,
   },
   {
     title: "Help",
@@ -42,25 +41,6 @@ export function Sidebar() {
   const { role } = useUserRole()
   const { user } = useUser()
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const [unreadCount, setUnreadCount] = useState(0)
-
-  useEffect(() => {
-    const fetchNotifications = async () => {
-      if (!user) return
-      try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/notifications/${user.id}`)
-        const unread = response.data.filter((n: any) => !n.read).length
-        setUnreadCount(unread)
-      } catch (error) {
-        console.error("Error fetching notifications:", error)
-      }
-    }
-
-    fetchNotifications()
-    // Poll every minute for new notifications
-    const interval = setInterval(fetchNotifications, 60000)
-    return () => clearInterval(interval)
-  }, [user])
 
   return (
     <div className={cn(
@@ -93,20 +73,10 @@ export function Sidebar() {
             >
               <div className="relative">
                 <item.icon className="h-4 w-4" />
-                {item.title === "Notifications" && unreadCount > 0 && isCollapsed && (
-                  <span className="absolute -top-2 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                )}
               </div>
               {!isCollapsed && (
                 <div className="flex flex-1 items-center justify-between">
                   <span>{item.title}</span>
-                  {item.title === "Notifications" && unreadCount > 0 && (
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs text-white">
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </span>
-                  )}
                 </div>
               )}
             </Link>

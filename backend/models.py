@@ -40,6 +40,7 @@ class ProcessPackageCreate(BaseModel):
     name: str
     sheets: list[ProcessSheet]
     versions: list = []
+    status: str = 'published'
 
 class ProcessRename(BaseModel):
     name: str

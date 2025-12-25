@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Bell, CheckCircle, Info, AlertTriangle } from 'lucide-react';
+import { Bell, CheckCircle, Info, AlertTriangle, Trash2, ExternalLink } from 'lucide-react';
 import axios from 'axios';
 import { useUser } from '@clerk/nextjs';
 import useSWR from 'swr';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
 
 interface Notification {
   id: number;
@@ -34,13 +36,15 @@ const fetcher = (url: string) => axios.get(url).then(res => res.data);
 
 export default function NotificationsPage() {
   const { user } = useUser();
+  const router = useRouter();
   
   const { data: notifications = [], error, isLoading, mutate } = useSWR<Notification[]>(
     user ? `${process.env.NEXT_PUBLIC_API_URL}/notifications/${user.id}` : null,
     fetcher
   );
 
-  const markAsRead = async (id: number) => {
+  const markAsRead = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
     try {
       // Optimistic update
       mutate(
@@ -53,6 +57,23 @@ export default function NotificationsPage() {
     } catch (error) {
       console.error('Error marking notification as read:', error);
       mutate(); // Revert on error
+    }
+  };
+
+  const deleteNotification = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    if (!confirm("Are you sure you want to delete this notification?")) return;
+
+    try {
+      mutate(
+        notifications.filter((n: Notification) => n.id !== id),
+        false
+      );
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/notifications/${id}`);
+      mutate();
+    } catch (error) {
+      console.error('Error deleting notification:', error);
+      mutate();
     }
   };
 
@@ -78,6 +99,11 @@ export default function NotificationsPage() {
     }
   };
 
+  const handleViewProject = (e: React.MouseEvent, projectId: string) => {
+      e.stopPropagation();
+      router.push(`/dashboard/process/create?projectId=${projectId}`);
+  };
+
   if (isLoading) {
     return <div className="p-8 text-center">Loading notifications...</div>;
   }
@@ -99,7 +125,6 @@ export default function NotificationsPage() {
             <div 
                 key={notification.id} 
                 className={`p-4 flex gap-4 hover:bg-gray-50 transition-colors ${!notification.read ? 'bg-blue-50/50' : ''}`}
-                onClick={() => !notification.read && markAsRead(notification.id)}
             >
                 <div className="flex-shrink-0 mt-1">
                 <NotificationIcon type={notification.type} />
@@ -113,22 +138,59 @@ export default function NotificationsPage() {
                 </div>
                 <p className="text-sm text-gray-600 mt-1">{notification.message}</p>
                 
-                {notification.type === 'invitation' && !notification.read && (
-                    <div className="mt-3 flex gap-2">
-                        <button 
-                            onClick={(e) => handleAccept(e, notification.id)}
-                            className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                <div className="mt-3 flex flex-wrap gap-2">
+                    {notification.type === 'invitation' && !notification.read && (
+                        <>
+                            <Button 
+                                onClick={(e) => handleAccept(e, notification.id)}
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700 text-white h-8"
+                            >
+                                Accept
+                            </Button>
+                            <Button 
+                                onClick={(e) => handleReject(e, notification.id)}
+                                size="sm"
+                                variant="destructive"
+                                className="h-8"
+                            >
+                                Reject
+                            </Button>
+                        </>
+                    )}
+
+                    {notification.metadata?.project_id && (
+                        <Button
+                            onClick={(e) => handleViewProject(e, notification.metadata.project_id)}
+                            size="sm"
+                            variant="outline"
+                            className="h-8 gap-2"
                         >
-                            Accept
-                        </button>
-                        <button 
-                            onClick={(e) => handleReject(e, notification.id)}
-                            className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+                            <ExternalLink className="w-3 h-3" />
+                            View Project
+                        </Button>
+                    )}
+
+                    {!notification.read && (
+                        <Button
+                            onClick={(e) => markAsRead(e, notification.id)}
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
                         >
-                            Reject
-                        </button>
-                    </div>
-                )}
+                            Mark as Read
+                        </Button>
+                    )}
+
+                    <Button
+                        onClick={(e) => deleteNotification(e, notification.id)}
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                    </Button>
+                </div>
                 </div>
                 {!notification.read && (
                 <div className="flex-shrink-0 self-center">

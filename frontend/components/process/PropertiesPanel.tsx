@@ -40,7 +40,9 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
     roles: [],
     responsibility: [],
     support: [],
-    description: ''
+    description: '',
+    verificationComments: '',
+    authorComments: ''
   });
 
   const [showRolesManager, setShowRolesManager] = useState(false);
@@ -111,7 +113,9 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
         roles: selectedNode.data.roles || [],
         responsibility: selectedNode.data.responsibility || [],
         support: selectedNode.data.support || [],
-        description: selectedNode.data.description || ''
+        description: selectedNode.data.description || '',
+        verificationComments: selectedNode.data.verificationComments || '',
+        authorComments: selectedNode.data.authorComments || ''
       });
     }
   }, [selectedNode]);
@@ -138,13 +142,13 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
           try {
             await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/notifications`, {
               user_id: userId,
-              type: 'invitation',
-              title: `Project Invitation: ${roleType}`,
-              message: `You have been assigned as ${roleType} for the node "${formData.label || 'Untitled'}" in a project by ${user?.fullName || user?.primaryEmailAddress?.emailAddress}.`,
+              type: 'info',
+              title: `New Responsibility Assigned`,
+              message: `In that project in that node "${formData.label || 'Untitled'}" you have been assigned as ${roleType} by ${user?.fullName || user?.primaryEmailAddress?.emailAddress}.`,
               read: false,
               metadata: {
                   project_id: projectId,
-                  role: 'editor', // Default to editor for assigned users? Or viewer?
+                  role: 'editor',
                   node_id: selectedNode.id,
                   node_label: formData.label
               }
@@ -236,6 +240,20 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
     }
   };
 
+  const handleCommentChange = (field: string, value: string) => {
+    const currentUser = availableUsers.find(u => u.clerk_id === user?.id);
+    const isAdmin = currentUser?.role === 'admin';
+    
+    const responsibleId = formData.responsibility?.[0];
+    const isResponsible = responsibleId === user?.id;
+
+    if (isAdmin || isResponsible || !responsibleId) {
+        handleChange(field, value);
+    } else {
+        alert("You do not have permission to add comments to this node.");
+    }
+  };
+
   const handleSave = () => {
     onSave(selectedNode.id, formData);
   };
@@ -275,7 +293,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
         </div>
 
         {/* State */}
-        {!isTextNode && (
+        {!isTextNode && projectId && (
         <div className="space-y-2">
           <label className="text-sm font-medium text-gray-700">State</label>
           <select
@@ -290,8 +308,35 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
         </div>
         )}
 
+        {/* Comments */}
+        {!isTextNode && projectId && (
+          <div className="space-y-4 border-t pt-4">
+            <h3 className="font-bold text-sm text-gray-800">Comments</h3>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Verification Comments</label>
+              <textarea
+                value={formData.verificationComments}
+                onChange={(e) => handleCommentChange('verificationComments', e.target.value)}
+                className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[60px]"
+                placeholder="Add verification comments..."
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Author Comments</label>
+              <textarea
+                value={formData.authorComments}
+                onChange={(e) => handleCommentChange('authorComments', e.target.value)}
+                className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[60px]"
+                placeholder="Add author comments..."
+              />
+            </div>
+          </div>
+        )}
+
         {/* Roles & Responsibilities Section */}
-        {!isTextNode && (
+        {!isTextNode && projectId && (
         <div className="space-y-4 border-t pt-4">
             <div className="flex justify-between items-center">
                 <h3 className="font-bold text-sm text-gray-800">Roles & Responsibilities</h3>
