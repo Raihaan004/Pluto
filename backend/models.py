@@ -56,7 +56,8 @@ class ProjectCreate(BaseModel):
     version_name: str
 
 class ProjectUpdate(BaseModel):
-    sheets: list[ProcessSheet]
+    sheets: Optional[list[ProcessSheet]] = None
+    name: Optional[str] = None
 
 class CollaboratorAdd(BaseModel):
     user_id: str

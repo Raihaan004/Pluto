@@ -8,19 +8,17 @@ import useSWR from 'swr'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 
-interface Collaborator {
-  user_id: string
-  role: string
-}
-
-interface Project {
-  id: number
-  name: string
-  process_id: number
-  version_name: string
-  created_at: string
-  user_id: string
-  collaborators: Collaborator[]
+interface Task {
+  project_id: number
+  project_name: string
+  work_product: string
+  version: string
+  author_id: string
+  status: string
+  verification_reviewers: string[]
+  verification_comments: string
+  author_comments: string
+  assigned_role: string
 }
 
 interface User {
@@ -37,8 +35,8 @@ const fetcherWithHeader = ([url, token]: [string, string]) => axios.get(url, { h
 export default function TasksPage() {
   const { user } = useUser()
 
-  const { data: projects = [], isLoading: loadingProjects } = useSWR<Project[]>(
-    user ? `${process.env.NEXT_PUBLIC_API_URL}/projects/${user.id}` : null,
+  const { data: tasks = [], isLoading: loadingTasks } = useSWR<Task[]>(
+    user ? `${process.env.NEXT_PUBLIC_API_URL}/tasks/${user.id}` : null,
     fetcher
   )
 
@@ -52,13 +50,12 @@ export default function TasksPage() {
     return foundUser ? `${foundUser.first_name} ${foundUser.last_name}` : "Unknown User"
   }
 
-  const getCollaboratorByRole = (project: Project, roleName: string) => {
-    const collaborator = project.collaborators?.find(c => c.role === roleName)
-    if (!collaborator) return "Not Assigned"
-    return getUserName(collaborator.user_id)
+  const getReviewersNames = (reviewerIds: string[]) => {
+    if (!reviewerIds || reviewerIds.length === 0) return "Not Assigned";
+    return reviewerIds.map(id => getUserName(id)).join(", ");
   }
 
-  if (loadingProjects) {
+  if (loadingTasks) {
     return <div className="p-8">Loading tasks...</div>
   }
 
@@ -94,27 +91,36 @@ export default function TasksPage() {
                 </tr>
               </thead>
               <tbody className="[&_tr:last-child]:border-0">
-                {projects.length === 0 ? (
+                {tasks.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="p-4 text-center text-muted-foreground">
                       No tasks found.
                     </td>
                   </tr>
                 ) : (
-                  projects.map((project) => (
-                    <tr key={project.id} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                      <td className="p-4 align-middle font-medium">{project.name}</td>
-                      <td className="p-4 align-middle">{project.name}</td>
+                  tasks.map((task, index) => (
+                    <tr key={index} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                      <td className="p-4 align-middle font-medium">{task.project_name}</td>
+                      <td className="p-4 align-middle">{task.work_product}</td>
                       <td className="p-4 align-middle">
-                        <Badge variant="outline">{project.version_name}</Badge>
+                        <Badge variant="outline">{task.version}</Badge>
                       </td>
-                      <td className="p-4 align-middle">{getUserName(project.user_id)}</td>
+                      <td className="p-4 align-middle">{getUserName(task.author_id)}</td>
                       <td className="p-4 align-middle">
-                        <Badge>In Progress</Badge>
+                        <Badge variant={
+                          task.status === 'Published' ? 'default' : 
+                          task.status === 'Review' ? 'secondary' : 'outline'
+                        }>
+                          {task.status}
+                        </Badge>
                       </td>
-                      <td className="p-4 align-middle">{getCollaboratorByRole(project, "Verification Reviewer")}</td>
-                      <td className="p-4 align-middle text-muted-foreground italic">No comments</td>
-                      <td className="p-4 align-middle text-muted-foreground italic">No comments</td>
+                      <td className="p-4 align-middle">{getReviewersNames(task.verification_reviewers)}</td>
+                      <td className="p-4 align-middle text-muted-foreground italic">
+                        {task.verification_comments || "No comments"}
+                      </td>
+                      <td className="p-4 align-middle text-muted-foreground italic">
+                        {task.author_comments || "No comments"}
+                      </td>
                     </tr>
                   ))
                 )}

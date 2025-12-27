@@ -136,35 +136,52 @@ def get_dashboard_stats(clerk_id: str):
         notif_response = supabase.table("notifications").select("*").eq("user_id", clerk_id).order("created_at", desc=True).limit(5).execute()
         notifications = notif_response.data if notif_response.data else []
 
-        # 2. Fetch projects count (where user is owner)
-        # Note: JSONB filtering for collaborators is complex in simple query, 
-        # for now we'll just count projects owned by user + projects where they are a collaborator
-        # This is a simplified approach.
+        # 2. Fetch projects count (where user is owner or collaborator)
+        # Get all projects to check collaborators and ownership
+        # We need 'user_id' to check ownership and 'collaborators' to check collaboration
+        all_projects_response = supabase.table("projects").select("id, user_id, collaborators, sheets").execute()
+        all_projects = all_projects_response.data if all_projects_response.data else []
         
-        # Get projects owned by user
-        owned_projects = supabase.table("projects").select("id", count="exact").eq("user_id", clerk_id).execute()
-        owned_count = owned_projects.count if owned_projects.count else 0
+        projects_pending = 0
+        tasks_assigned = 0
         
-        # Get all projects to check collaborators (inefficient for large DBs, but fine for prototype)
-        # A better way would be to use a Postgres function or advanced filter
-        all_projects = supabase.table("projects").select("collaborators").execute()
-        collab_count = 0
-        if all_projects.data:
-            for p in all_projects.data:
-                collabs = p.get("collaborators", [])
-                # Check if user is in collaborators list
-                if any(c.get("clerk_id") == clerk_id for c in collabs):
-                    collab_count += 1
+        # Set to track unique task IDs to avoid double counting if multiple references exist (though unlikely in this structure)
+        assigned_task_ids = set()
 
-        total_projects = owned_count + collab_count
+        for project in all_projects:
+            # Check Project Pending Count
+            is_owner = project.get("user_id") == clerk_id
+            collaborators = project.get("collaborators", [])
+            is_collaborator = any(c.get("clerk_id") == clerk_id for c in collaborators)
+            
+            if is_owner or is_collaborator:
+                projects_pending += 1
 
-        # 3. Calculate tasks assigned (based on 'assignment' type notifications)
-        # This is a proxy metric for now
-        tasks_count = sum(1 for n in notifications if n.get("type") == "assignment")
+            # Check Tasks Assigned
+            # Iterate through sheets and nodes to find assignments
+            sheets = project.get("sheets", [])
+            for sheet in sheets:
+                nodes = sheet.get("nodes", [])
+                for node in nodes:
+                    data = node.get("data", {})
+                    
+                    # Check responsibility
+                    responsibility = data.get("responsibility", [])
+                    # Check support
+                    support = data.get("support", [])
+                    
+                    # If user is in responsibility or support list
+                    if clerk_id in responsibility or clerk_id in support:
+                        # Use composite key of project_id and node_id to ensure uniqueness across projects
+                        project_id = project.get("id", "unknown")
+                        node_id = node.get("id", "unknown")
+                        assigned_task_ids.add(f"{project_id}_{node_id}")
+
+        tasks_assigned = len(assigned_task_ids)
 
         return {
-            "tasks_assigned": tasks_count,
-            "projects_pending": total_projects,
+            "tasks_assigned": tasks_assigned,
+            "projects_pending": projects_pending,
             "notifications": notifications
         }
     except Exception as e:
@@ -286,6 +303,14 @@ def save_process_version(process_id: int, version: ProcessVersionCreate):
         print(f"Error saving version: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/processes/{process_id}")
+def delete_process(process_id: int):
+    try:
+        response = supabase.table("processes").delete().eq("id", process_id).execute()
+        return {"status": "deleted", "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/projects")
 def create_project(project: ProjectCreate):
     try:
@@ -313,6 +338,62 @@ def create_project(project: ProjectCreate):
         return {"status": "created", "data": response.data}
     except Exception as e:
         print(f"Error creating project: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/tasks/{user_id}")
+def get_user_tasks(user_id: str):
+    try:
+        # Fetch all projects to scan for node assignments
+        # In production, this should be optimized with a JSONB query
+        response = supabase.table("projects").select("*").execute()
+        projects = response.data
+        
+        tasks = []
+        
+        for project in projects:
+            sheets = project.get("sheets", [])
+            # Handle case where sheets might be None or empty
+            if not sheets:
+                continue
+                
+            for sheet in sheets:
+                nodes = sheet.get("nodes", [])
+                for node in nodes:
+                    data = node.get("data", {})
+                    responsibility = data.get("responsibility", [])
+                    support = data.get("support", [])
+                    
+                    # Ensure lists
+                    if not isinstance(responsibility, list): responsibility = []
+                    if not isinstance(support, list): support = []
+                    
+                    # Check if user is assigned
+                    is_responsible = user_id in responsibility
+                    is_support = user_id in support
+                    
+                    if is_responsible or is_support:
+                        # Determine role name
+                        role = "Responsible" if is_responsible else "Support"
+                        
+                        task = {
+                            "project_id": project["id"],
+                            "project_name": project["name"],
+                            "work_product": data.get("label", "Untitled Node"),
+                            "version": project.get("version_name", "1.0"),
+                            "author_id": project["user_id"],
+                            "status": data.get("state", "Draft"),
+                            "verification_reviewers": support, # List of support user IDs
+                            "verification_comments": data.get("verificationComments", ""),
+                            "author_comments": data.get("authorComments", ""),
+                            "assigned_role": role
+                        }
+                        tasks.append(task)
+                        
+        return tasks
+    except Exception as e:
+        print(f"Error fetching tasks: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/projects/{user_id}")
@@ -381,9 +462,14 @@ def get_project(project_id: int):
 def update_project(project_id: int, update: ProjectUpdate):
     try:
         data = {
-            "sheets": [sheet.model_dump() for sheet in update.sheets],
             "updated_at": "now()"
         }
+        if update.sheets is not None:
+            data["sheets"] = [sheet.model_dump() for sheet in update.sheets]
+            
+        if update.name is not None:
+            data["name"] = update.name
+            
         response = supabase.table("projects").update(data).eq("id", project_id).execute()
         return {"status": "updated", "data": response.data}
     except Exception as e:

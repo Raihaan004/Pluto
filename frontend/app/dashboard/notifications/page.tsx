@@ -101,7 +101,7 @@ export default function NotificationsPage() {
 
   const handleViewProject = (e: React.MouseEvent, projectId: string) => {
       e.stopPropagation();
-      router.push(`/dashboard/process/create?projectId=${projectId}`);
+      router.push(`/dashboard/projects/editor?projectId=${projectId}`);
   };
 
   if (isLoading) {
