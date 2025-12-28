@@ -826,7 +826,7 @@ export default function CreateProcessPage() {
                     projectId={projectId} 
                     users={users} 
                     currentCollaborators={currentCollaborators}
-                    projectOwnerId={projectOwnerId}
+                    projectOwnerId={projectOwnerId || undefined}
                     onUpdate={fetchProjectData}
                 />
             )}
