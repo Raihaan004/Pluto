@@ -448,6 +448,24 @@ def add_collaborator(project_id: int, collaborator: CollaboratorAdd):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/projects/{project_id}/collaborators/{user_id}")
+def remove_collaborator(project_id: int, user_id: str):
+    try:
+        # Fetch current project
+        project_res = supabase.table("projects").select("collaborators").eq("id", project_id).execute()
+        if not project_res.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+            
+        current_collaborators = project_res.data[0].get("collaborators", [])
+        
+        # Remove the collaborator
+        updated_collaborators = [c for c in current_collaborators if c.get("user_id") != user_id]
+        
+        response = supabase.table("projects").update({"collaborators": updated_collaborators}).eq("id", project_id).execute()
+        return {"status": "removed", "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/project/{project_id}")
 def get_project(project_id: int):
     try:

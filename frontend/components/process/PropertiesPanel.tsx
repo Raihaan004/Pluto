@@ -138,6 +138,19 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
       const selectedUser = availableUsers.find(u => u.clerk_id === userId);
       if (!selectedUser) return;
 
+      const addAsCollaborator = async () => {
+          try {
+            // Add user as collaborator with editor role so they can see and edit the project
+            await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/projects/${projectId}/collaborators`, {
+              user_id: userId,
+              role: 'editor'
+            });
+          } catch (error) {
+            console.error('Error adding collaborator:', error);
+            // Don't fail the whole operation if collaborator add fails
+          }
+      };
+
       const sendNotification = async (roleType: string) => {
           try {
             await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/notifications`, {
@@ -153,7 +166,6 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
                   node_label: formData.label
               }
             });
-            alert(`Invitation sent to ${selectedUser.first_name || selectedUser.email}`);
           } catch (error) {
             console.error('Error sending notification:', error);
           }
@@ -166,7 +178,10 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
               [field]: [userId] // Store ID, not name, for easier permission checks
           }));
           if (projectId) {
+              // Add as collaborator first, then send notification
+              await addAsCollaborator();
               await sendNotification('Responsible');
+              alert(`User ${selectedUser.first_name || selectedUser.email} added as collaborator and assigned as Responsible`);
           }
       } else {
           // Store ID for support as well to enable full user details in NodeInfoDialog
@@ -176,7 +191,10 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
                   [field]: [...(prev[field] || []), userId]
               }));
               if (projectId) {
+                  // Add as collaborator first, then send notification
+                  await addAsCollaborator();
                   await sendNotification('Support');
+                  alert(`User ${selectedUser.first_name || selectedUser.email} added as collaborator and assigned as Support`);
               }
           }
       }

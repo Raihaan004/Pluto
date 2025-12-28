@@ -340,6 +340,7 @@ export default function CreateProcessPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [projectPermission, setProjectPermission] = useState<'owner' | 'editor' | 'viewer' | null>(null);
   const [currentCollaborators, setCurrentCollaborators] = useState<{ user_id: string; role: string }[]>([]);
+  const [projectOwnerId, setProjectOwnerId] = useState<string | null>(null);
   const [rfInstance, setRfInstance] = useState<any>(null);
 
   const isReadOnly = projectPermission === 'viewer';
@@ -403,6 +404,9 @@ export default function CreateProcessPage() {
           const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/project/${projectId}`);
           const projectData = response.data;
           
+          // Store project owner ID
+          setProjectOwnerId(projectData.user_id || null);
+          
           if (user) {
              if (projectData.user_id === user.id) {
                  setProjectPermission('owner');
@@ -461,6 +465,9 @@ export default function CreateProcessPage() {
         try {
           const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/project/${projectId}`);
           const projectData = response.data;
+          
+          // Store project owner ID
+          setProjectOwnerId(projectData.user_id || null);
           
           if (user) {
              if (projectData.user_id === user.id) {
@@ -799,35 +806,43 @@ export default function CreateProcessPage() {
         <h1 className="text-2xl font-bold">{projectId ? 'Edit Project Canvas' : 'Create New Process'}</h1>
         {!isReadOnly && (
         <div className="flex gap-2">
+            {/* Canvas Tools - Available for both processes and projects */}
+            <button onClick={handleUndo} disabled={history.length === 0} className="p-2 hover:bg-gray-200 rounded disabled:opacity-30" title="Undo">
+              <Undo size={20} />
+            </button>
+            <button onClick={handleRedo} disabled={future.length === 0} className="p-2 hover:bg-gray-200 rounded disabled:opacity-30" title="Redo">
+              <Redo size={20} />
+            </button>
+            <button onClick={handleDelete} className="p-2 hover:bg-gray-200 rounded text-red-500" title="Delete Selected">
+              <Trash2 size={20} />
+            </button>
+            
+            {/* Divider */}
+            <div className="w-px h-6 bg-gray-300 mx-2"></div>
+            
+            {/* Project-specific: Add Members button */}
             {projectId && projectPermission === 'owner' && (
                 <ShareProjectDialog 
                     projectId={projectId} 
                     users={users} 
                     currentCollaborators={currentCollaborators}
+                    projectOwnerId={projectOwnerId}
                     onUpdate={fetchProjectData}
                 />
             )}
+            
+            {/* Process-specific: Save Draft button */}
             {!projectId && (
-              <>
-                <button onClick={handleUndo} disabled={history.length === 0} className="p-2 hover:bg-gray-200 rounded disabled:opacity-30" title="Undo">
-                  <Undo size={20} />
-                </button>
-                <button onClick={handleRedo} disabled={future.length === 0} className="p-2 hover:bg-gray-200 rounded disabled:opacity-30" title="Redo">
-                  <Redo size={20} />
-                </button>
-                <button onClick={handleDelete} className="p-2 hover:bg-gray-200 rounded text-red-500" title="Delete Selected">
-                  <Trash2 size={20} />
-                </button>
-                <div className="w-px h-6 bg-gray-300 mx-2"></div>
-                <button 
-                  onClick={handleSaveDraft}
-                  disabled={isSaving}
-                  className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 text-sm font-medium disabled:opacity-50"
-                >
-                  {isSaving ? 'Saving...' : 'Save Draft'}
-                </button>
-              </>
+              <button 
+                onClick={handleSaveDraft}
+                disabled={isSaving}
+                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 text-sm font-medium disabled:opacity-50"
+              >
+                {isSaving ? 'Saving...' : 'Save Draft'}
+              </button>
             )}
+            
+            {/* Save/Publish button */}
             <button 
               onClick={handleSave}
               disabled={isSaving}

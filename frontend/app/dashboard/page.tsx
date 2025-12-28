@@ -8,6 +8,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { formatDistanceToNow } from "date-fns"
 import { DashboardNotifications } from "@/components/DashboardNotifications"
+import { CreateProjectButton } from "@/components/CreateProjectButton"
 
 // Mock data fetcher since we might not have the backend running perfectly yet
 async function getDashboardData(userId: string) {
@@ -70,11 +71,7 @@ export default async function DashboardPage() {
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Dashboard</h1>
           <p className="text-gray-500 mt-1 text-lg">Welcome back! Here's an overview of your projects.</p>
         </div>
-        <Button asChild className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg rounded-xl px-6 h-12 text-base font-medium transition-all hover:scale-105">
-            <Link href="/dashboard/process/create">
-                + New Project
-            </Link>
-        </Button>
+        <CreateProjectButton />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

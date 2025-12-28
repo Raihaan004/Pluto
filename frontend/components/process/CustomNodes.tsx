@@ -154,14 +154,13 @@ const DecisionNode = ({ data, selected }: any) => {
       <NodeResizer color="#ea580c" isVisible={selected} minWidth={100} minHeight={100} />
       <div className="w-full h-full relative flex items-center justify-center group">
         <div 
-          className="absolute inset-0 border-2 rotate-45 transform shadow-md"
+          className="absolute inset-0 border-2 shadow-md rounded-md"
           style={{ 
             backgroundColor: data.backgroundColor || '#FED7AA', 
             borderColor: '#FB923C',
-            width: '70%', // Adjust for diamond shape within square container
-            height: '70%',
-            left: '15%',
-            top: '15%'
+            clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
+            width: '100%',
+            height: '100%',
           }}
         ></div>
         <div className="relative z-10 w-full h-full flex items-center justify-center pointer-events-none">
@@ -173,7 +172,7 @@ const DecisionNode = ({ data, selected }: any) => {
               <StatusIndicator state={data.state} />
            </div>
            <div 
-              className="text-sm rotate-0 px-6"
+              className="text-sm px-6"
               style={{
                 color: data.textColor || '#7C2D12',
                 fontWeight: data.isBold ? 'bold' : 'normal',
@@ -184,14 +183,14 @@ const DecisionNode = ({ data, selected }: any) => {
               {data.label}
             </div>
         </div>
-        <Handle type="target" position={Position.Top} id="t-top" className="w-3 h-3 bg-orange-500 -mt-16 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Handle type="source" position={Position.Top} id="s-top" className="w-3 h-3 bg-orange-500 -mt-16 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Handle type="target" position={Position.Bottom} id="t-bottom" className="w-3 h-3 bg-orange-500 -mb-16 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Handle type="source" position={Position.Bottom} id="s-bottom" className="w-3 h-3 bg-orange-500 -mb-16 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Handle type="target" position={Position.Left} id="t-left" className="w-3 h-3 bg-orange-500 -ml-16 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Handle type="source" position={Position.Left} id="s-left" className="w-3 h-3 bg-orange-500 -ml-16 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Handle type="target" position={Position.Right} id="t-right" className="w-3 h-3 bg-orange-500 -mr-16 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Handle type="source" position={Position.Right} id="s-right" className="w-3 h-3 bg-orange-500 -mr-16 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <Handle type="target" position={Position.Top} id="t-top" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <Handle type="source" position={Position.Top} id="s-top" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <Handle type="target" position={Position.Bottom} id="t-bottom" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <Handle type="source" position={Position.Bottom} id="s-bottom" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <Handle type="target" position={Position.Left} id="t-left" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <Handle type="source" position={Position.Left} id="s-left" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <Handle type="target" position={Position.Right} id="t-right" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <Handle type="source" position={Position.Right} id="s-right" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
     </>
   );
