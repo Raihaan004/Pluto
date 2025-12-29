@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useUser } from '@clerk/nextjs';
+import axios from 'axios';
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, isToday } from 'date-fns';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, CheckCircle2, Briefcase, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -9,19 +11,31 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
-// Mock data for deadlines
-// In a real app, this would come from your backend
-const deadlines = [
-  { id: 1, title: 'Project Alpha Review', date: new Date(2025, 11, 28), type: 'project', route: '/dashboard/projects' }, // Dec 28, 2025
-  { id: 2, title: 'Update Documentation', date: new Date(2025, 11, 30), type: 'task', route: '/dashboard/tasks' }, // Dec 30, 2025
-  { id: 3, title: 'Team Meeting', date: new Date(2026, 0, 5), type: 'meeting', route: '#' }, // Jan 5, 2026
-  { id: 4, title: 'Q4 Report Due', date: new Date(2025, 11, 31), type: 'task', route: '/dashboard/tasks' }, // Dec 31, 2025
-  { id: 5, title: 'New Year Kickoff', date: new Date(2026, 0, 1), type: 'meeting', route: '#' }, // Jan 1, 2026
-];
 
 export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [deadlines, setDeadlines] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { user } = useUser();
   const router = useRouter();
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      if (!user) return;
+      setLoading(true);
+      try {
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/calendar/events/${user.id}`);
+        const events = response.data.map((event: any) => ({ ...event, date: new Date(event.date) }));
+        setDeadlines(events);
+      } catch (error) {
+        console.error("Failed to fetch calendar events:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchEvents();
+  }, [user]);
 
   const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
   const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));

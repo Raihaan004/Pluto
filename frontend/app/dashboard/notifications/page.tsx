@@ -72,22 +72,41 @@ export default function NotificationsPage() {
 
     setDeletingIds(prev => new Set(prev).add(id));
     
+    // Store the original notifications for potential rollback
+    const originalNotifications = [...notifications];
+    
     try {
-      // Optimistically update the UI
-      mutate(notifications.filter((n: Notification) => n.id !== id), false);
-
+      // Optimistically remove from UI immediately
+      mutate(
+        notifications.filter((n: Notification) => n.id !== id),
+        false // Don't revalidate yet
+      );
+      
       // Send delete request to the backend
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/notifications/${id}`);
-
-      // Revalidate the data to ensure consistency with the backend
-      mutate();
+      const response = await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/notifications/${id}`);
+      
+      // Verify successful deletion
+      if (response.status === 200 || response.status === 204) {
+        // Revalidate after a short delay to sync with backend
+        setTimeout(() => {
+          mutate();
+        }, 300);
+      } else {
+        // If response status is unexpected, revert and revalidate
+        mutate(originalNotifications, false);
+        mutate();
+        alert('Failed to delete notification. Please try again.');
+      }
     } catch (error: any) {
       console.error('Error deleting notification:', error);
-
-      // Revert the optimistic update on error by re-fetching the original data
+      
+      // Revert the optimistic update on error
+      mutate(originalNotifications, false);
+      
+      // Revalidate to get the actual state from server
       mutate();
       
-      // Show more detailed error message
+      // Show error message
       const errorMessage = error?.response?.data?.detail || error?.message || 'Unknown error';
       alert(`Failed to delete notification: ${errorMessage}`);
     } finally {

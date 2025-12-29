@@ -1,10 +1,11 @@
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from database import supabase
 from models import UserCreate, RoleUpdate, NotificationCreate, ProcessPackageCreate, ProcessRename, ProcessVersionCreate, ProjectCreate, ProjectUpdate, CollaboratorAdd
 from typing import Optional
 from datetime import datetime
+from email_service import send_email, create_assignment_email_html, create_assignment_email_text
 
 app = FastAPI()
 
@@ -106,8 +107,94 @@ def update_user_role(target_clerk_id: str, role_update: RoleUpdate, requester_id
 @app.post("/notifications")
 def create_notification(notification: NotificationCreate):
     try:
-        data = supabase.table("notifications").insert(notification.model_dump()).execute()
-        return {"status": "created", "data": data.data}
+        data = notification.model_dump()
+        response = supabase.table("notifications").insert(data).execute()
+        
+        # Send email if this is a role/responsibility assignment notification
+        metadata = notification.metadata or {}
+        if metadata.get("node_id") and metadata.get("project_id"):
+            try:
+                # Get recipient user details
+                recipient_res = supabase.table("users").select("email, first_name, last_name").eq("clerk_id", notification.user_id).execute()
+                if recipient_res.data:
+                    recipient = recipient_res.data[0]
+                    recipient_email = recipient.get("email")
+                    recipient_name = f"{recipient.get('first_name', '')} {recipient.get('last_name', '')}".strip() or recipient_email
+                    
+                    # Get project details
+                    project_res = supabase.table("projects").select("name, version_name, user_id").eq("id", metadata.get("project_id")).execute()
+                    project = project_res.data[0] if project_res.data else None
+                    
+                    # Get assigned by user details
+                    assigned_by_id = metadata.get("assigned_by_id")
+                    assigned_by_name = metadata.get("assigned_by_name", "System")
+                    assigned_by_email = metadata.get("assigned_by_email", "")
+                    
+                    if assigned_by_id:
+                        assigned_by_res = supabase.table("users").select("email, first_name, last_name").eq("clerk_id", assigned_by_id).execute()
+                        if assigned_by_res.data:
+                            assigned_by_user = assigned_by_res.data[0]
+                            assigned_by_name = f"{assigned_by_user.get('first_name', '')} {assigned_by_user.get('last_name', '')}".strip() or assigned_by_user.get("email", "")
+                            assigned_by_email = assigned_by_user.get("email", "")
+                    
+                    if recipient_email and project:
+                        # Determine role type from notification message or metadata
+                        role_type = "Responsible"
+                        if "Support" in notification.message or "support" in notification.message.lower():
+                            role_type = "Support"
+                        elif "Responsible" in notification.message or "responsible" in notification.message.lower():
+                            role_type = "Responsible"
+                        
+                        # Get node details from metadata
+                        work_product = metadata.get("node_label", notification.message.split('"')[1] if '"' in notification.message else "Untitled")
+                        node_status = metadata.get("node_status", "Draft")
+                        deadline = metadata.get("deadline")
+                        # Format deadline if it's a date string
+                        if deadline:
+                            try:
+                                from datetime import datetime
+                                if isinstance(deadline, str):
+                                    deadline_date = datetime.fromisoformat(deadline.replace('Z', '+00:00'))
+                                    deadline = deadline_date.strftime("%B %d, %Y")
+                            except:
+                                pass  # Keep original format if parsing fails
+                        description = metadata.get("description")
+                        
+                        # Create and send email
+                        subject = f"New {role_type} Assignment - {project.get('name', 'Project')}"
+                        html_body = create_assignment_email_html(
+                            recipient_name=recipient_name,
+                            role_type=role_type,
+                            project_name=project.get("name", "Untitled Project"),
+                            work_product=work_product,
+                            assigned_by_name=assigned_by_name,
+                            assigned_by_email=assigned_by_email,
+                            project_version=project.get("version_name"),
+                            node_status=node_status,
+                            deadline=deadline,
+                            description=description
+                        )
+                        text_body = create_assignment_email_text(
+                            recipient_name=recipient_name,
+                            role_type=role_type,
+                            project_name=project.get("name", "Untitled Project"),
+                            work_product=work_product,
+                            assigned_by_name=assigned_by_name,
+                            assigned_by_email=assigned_by_email,
+                            project_version=project.get("version_name"),
+                            node_status=node_status,
+                            deadline=deadline,
+                            description=description
+                        )
+                        
+                        send_email(recipient_email, subject, html_body, text_body)
+            except Exception as email_error:
+                # Don't fail the notification creation if email fails
+                print(f"Error sending email notification: {email_error}")
+                import traceback
+                traceback.print_exc()
+        
+        return {"status": "created", "data": response.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -144,6 +231,7 @@ def get_dashboard_stats(clerk_id: str):
         
         projects_pending = 0
         tasks_assigned = 0
+        upcoming_deadlines = 0
         
         # Set to track unique task IDs to avoid double counting if multiple references exist (though unlikely in this structure)
         assigned_task_ids = set()
@@ -177,11 +265,16 @@ def get_dashboard_stats(clerk_id: str):
                         node_id = node.get("id", "unknown")
                         assigned_task_ids.add(f"{project_id}_{node_id}")
 
+                    # Check for deadlines
+                    if data.get("deadline"):
+                        upcoming_deadlines += 1
+
         tasks_assigned = len(assigned_task_ids)
 
         return {
             "tasks_assigned": tasks_assigned,
             "projects_pending": projects_pending,
+            "upcoming_deadlines": upcoming_deadlines,
             "notifications": notifications
         }
     except Exception as e:
@@ -190,6 +283,7 @@ def get_dashboard_stats(clerk_id: str):
         return {
             "tasks_assigned": 0,
             "projects_pending": 0,
+            "upcoming_deadlines": 0,
             "notifications": []
         }
 
@@ -264,19 +358,6 @@ def rename_process(process_id: int, rename: ProcessRename):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.put("/processes/{process_id}")
-def update_process_content(process_id: int, process: ProcessPackageCreate):
-    try:
-        data = {
-            "user_id": process.user_id,
-            "name": process.name,
-            "sheets": [sheet.model_dump() for sheet in process.sheets],
-            "updated_at": "now()"
-        }
-        response = supabase.table("processes").update(data).eq("id", process_id).execute()
-        return {"status": "updated", "data": response.data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/processes/{process_id}/versions")
 def save_process_version(process_id: int, version: ProcessVersionCreate):
@@ -385,13 +466,88 @@ def get_user_tasks(user_id: str):
                             "verification_reviewers": support, # List of support user IDs
                             "verification_comments": data.get("verificationComments", ""),
                             "author_comments": data.get("authorComments", ""),
-                            "assigned_role": role
+                            "assigned_role": role,
+                            "created_at": project.get("created_at", ""),
+                            "node_id": node.get("id"),  # Store node ID for clearing
+                            "sheet_index": sheets.index(sheet)  # Store sheet index for clearing
                         }
                         tasks.append(task)
                         
         return tasks
     except Exception as e:
         print(f"Error fetching tasks: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/tasks/{user_id}")
+def clear_task(
+    user_id: str,
+    project_id: int = Query(...),
+    node_id: str = Query(...),
+    sheet_index: int = Query(...)
+):
+    try:
+        # Fetch the project
+        response = supabase.table("projects").select("*").eq("id", project_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        project = response.data[0]
+        sheets = project.get("sheets", [])
+        
+        if sheet_index >= len(sheets):
+            raise HTTPException(status_code=404, detail="Sheet not found")
+        
+        sheet = sheets[sheet_index]
+        nodes = sheet.get("nodes", [])
+        
+        # Find the node
+        node = None
+        node_index = None
+        for idx, n in enumerate(nodes):
+            if n.get("id") == node_id:
+                node = n
+                node_index = idx
+                break
+        
+        if not node:
+            raise HTTPException(status_code=404, detail="Node not found")
+        
+        # Remove user from responsibility or support
+        data = node.get("data", {})
+        responsibility = data.get("responsibility", [])
+        support = data.get("support", [])
+        
+        # Ensure lists
+        if not isinstance(responsibility, list): responsibility = []
+        if not isinstance(support, list): support = []
+        
+        # Remove user from both arrays
+        updated_responsibility = [uid for uid in responsibility if uid != user_id]
+        updated_support = [uid for uid in support if uid != user_id]
+        
+        # Update the node data
+        data["responsibility"] = updated_responsibility
+        data["support"] = updated_support
+        node["data"] = data
+        
+        # Update the nodes array
+        nodes[node_index] = node
+        sheet["nodes"] = nodes
+        
+        # Update the sheets array
+        sheets[sheet_index] = sheet
+        
+        # Update the project
+        response = supabase.table("projects").update({
+            "sheets": sheets,
+            "updated_at": "now()"
+        }).eq("id", project_id).execute()
+        
+        return {"status": "cleared", "data": response.data}
+    except Exception as e:
+        print(f"Error clearing task: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -476,6 +632,14 @@ def get_project(project_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.put("/project/{project_id}/rename")
+def rename_project(project_id: int, rename: ProcessRename):
+    try:
+        data = supabase.table("projects").update({"name": rename.name}).eq("id", project_id).execute()
+        return {"status": "updated", "data": data.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.put("/project/{project_id}")
 def update_project(project_id: int, update: ProjectUpdate):
     try:
@@ -517,6 +681,37 @@ def get_all_projects(requester_id: Optional[str] = Header(None, alias="X-Clerk-U
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/calendar/events/{user_id}")
+def get_calendar_events(user_id: str):
+    try:
+        import json
+        # Fetch all projects where the user is either the owner or a collaborator
+        collaborator_tag = json.dumps([{"user_id": user_id}])
+        response = supabase.table("projects").select("id, name, sheets").or_(
+            f"user_id.eq.{user_id},collaborators.cs.{collaborator_tag}"
+        ).execute()
+
+        events = []
+        for project in response.data:
+            if not project.get('sheets'):
+                continue
+            for sheet in project['sheets']:
+                if not sheet.get('nodes'):
+                    continue
+                for node in sheet['nodes']:
+                    if node.get('data', {}).get('deadline'):
+                        events.append({
+                            "id": f"{project['id']}-{node['id']}",
+                            "title": node['data'].get('label', 'Untitled Task'),
+                            "date": node['data']['deadline'],
+                            "type": "task", # All deadlines are considered tasks for now
+                            "route": f"/dashboard/process/create?projectId={project['id']}"
+                        })
+        return events
+    except Exception as e:
+        print(f"Error fetching calendar events: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.delete("/projects/{project_id}")
 def delete_project(project_id: int, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     try:
@@ -539,14 +734,6 @@ def delete_project(project_id: int, requester_id: Optional[str] = Header(None, a
         print(f"Error deleting project: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/notifications")
-def create_notification(notification: NotificationCreate):
-    try:
-        data = notification.model_dump()
-        response = supabase.table("notifications").insert(data).execute()
-        return {"status": "created", "data": response.data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/notifications/{user_id}")
 def get_notifications(user_id: str):
@@ -623,9 +810,23 @@ def reject_notification(notification_id: int):
 @app.delete("/notifications/{notification_id}")
 def delete_notification(notification_id: int):
     try:
+        # Check if notification exists first
+        check_response = supabase.table("notifications").select("id").eq("id", notification_id).execute()
+        if not check_response.data:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        
+        # Delete the notification
         response = supabase.table("notifications").delete().eq("id", notification_id).execute()
-        return {"status": "deleted", "data": response.data}
+        
+        # Supabase delete returns empty list [] on success, so check if response exists
+        # If we got here without exception, deletion was successful
+        return {"status": "deleted", "data": response.data if response.data else []}
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"Error deleting notification: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 

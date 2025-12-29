@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2, CalendarIcon } from 'lucide-react';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
 import axios from 'axios';
 import { useUser } from '@clerk/nextjs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
@@ -42,7 +46,8 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
     support: [],
     description: '',
     verificationComments: '',
-    authorComments: ''
+    authorComments: '',
+    deadline: undefined as Date | undefined,
   });
 
   const [showRolesManager, setShowRolesManager] = useState(false);
@@ -115,7 +120,8 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
         support: selectedNode.data.support || [],
         description: selectedNode.data.description || '',
         verificationComments: selectedNode.data.verificationComments || '',
-        authorComments: selectedNode.data.authorComments || ''
+        authorComments: selectedNode.data.authorComments || '',
+        deadline: selectedNode.data.deadline ? new Date(selectedNode.data.deadline) : undefined
       });
     }
   }, [selectedNode]);
@@ -153,17 +159,41 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
 
       const sendNotification = async (roleType: string) => {
           try {
+            // Fetch project details to include in email
+            let projectName = 'Untitled Project';
+            let projectVersion = null;
+            
+            if (projectId) {
+              try {
+                const projectRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/project/${projectId}`);
+                if (projectRes.data) {
+                  projectName = projectRes.data.name || 'Untitled Project';
+                  projectVersion = projectRes.data.version_name || null;
+                }
+              } catch (error) {
+                console.error('Error fetching project details:', error);
+              }
+            }
+            
             await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/notifications`, {
               user_id: userId,
               type: 'info',
-              title: `New Responsibility Assigned`,
-              message: `In that project in that node "${formData.label || 'Untitled'}" you have been assigned as ${roleType} by ${user?.fullName || user?.primaryEmailAddress?.emailAddress}.`,
+              title: `New ${roleType} Assignment`,
+              message: `In project "${projectName}" in node "${formData.label || 'Untitled'}" you have been assigned as ${roleType} by ${user?.fullName || user?.primaryEmailAddress?.emailAddress}.`,
               read: false,
               metadata: {
                   project_id: projectId,
                   role: 'editor',
                   node_id: selectedNode.id,
-                  node_label: formData.label
+                  node_label: formData.label || 'Untitled',
+                  project_name: projectName,
+                  project_version: projectVersion,
+                  node_status: formData.state || 'Draft',
+                  deadline: formData.deadline || null,
+                  description: formData.description || null,
+                  assigned_by_id: user?.id || null,
+                  assigned_by_name: user?.fullName || user?.primaryEmailAddress?.emailAddress || 'System',
+                  assigned_by_email: user?.primaryEmailAddress?.emailAddress || ''
               }
             });
           } catch (error) {
@@ -411,6 +441,33 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
                         </option>
                     ))}
                 </select>
+            </div>
+
+            {/* Deadline */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Deadline</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !formData.deadline && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {formData.deadline ? format(formData.deadline, "PPP") : <span>Pick a date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={formData.deadline}
+                    onSelect={(date) => handleChange('deadline', date)}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Support */}

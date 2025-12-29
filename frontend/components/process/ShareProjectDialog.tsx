@@ -68,7 +68,7 @@ export function ShareProjectDialog({ projectId, users, currentCollaborators = []
     }
   }
 
-  // Filter out users who are already collaborators
+  // Filter out users who are already collaborators or the owner
   const availableUsers = users.filter(u => 
     !currentCollaborators.some(c => c.user_id === u.clerk_id) && 
     u.clerk_id !== projectOwnerId

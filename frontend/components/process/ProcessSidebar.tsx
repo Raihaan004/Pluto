@@ -48,120 +48,136 @@ export const ProcessSidebar = ({
         {isOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
       </button>
 
-      <div className={cn("flex flex-col gap-4 h-full overflow-y-auto p-4 min-w-[16rem]", !isOpen && "hidden")}>
-        <div className="font-bold text-sm text-gray-500 uppercase">Toolbox</div>
-      
-        <div className="flex flex-col gap-2">
-        <div 
-          className="flex items-center gap-2 p-2 border rounded cursor-grab hover:bg-gray-50 bg-blue-100 border-blue-200" 
-          onDragStart={(event) => onDragStart(event, 'workProduct', 'Work Product')} 
-          draggable
-        >
-          <Box className="w-4 h-4 text-blue-600" />
-          <span className="text-sm font-medium text-blue-900">Work Product</span>
-        </div>
-
-        <div 
-          className="flex items-center gap-2 p-2 border rounded cursor-grab hover:bg-gray-50 bg-yellow-50 border-yellow-200" 
-          onDragStart={(event) => onDragStart(event, 'activity', 'Activity')} 
-          draggable
-        >
-          <Activity className="w-4 h-4 text-yellow-600" />
-          <span className="text-sm font-medium text-yellow-900">Activity</span>
-        </div>
-
-        <div 
-          className="flex items-center gap-2 p-2 border rounded cursor-grab hover:bg-gray-50 bg-orange-50 border-orange-200" 
-          onDragStart={(event) => onDragStart(event, 'decision', 'Decision')} 
-          draggable
-        >
-          <GitMerge className="w-4 h-4 text-orange-600" />
-          <span className="text-sm font-medium text-orange-900">Decision</span>
-        </div>
-
-        <div 
-          className="flex items-center gap-2 p-2 border rounded cursor-grab hover:bg-gray-50 bg-green-50 border-green-200" 
-          onDragStart={(event) => onDragStart(event, 'process', 'Process')} 
-          draggable
-        >
-          <Layers className="w-4 h-4 text-green-600" />
-          <span className="text-sm font-medium text-green-900">Process</span>
-        </div>
-
-        <div 
-          className="flex items-center gap-2 p-2 border rounded cursor-grab hover:bg-gray-50 bg-cyan-50 border-cyan-200" 
-          onDragStart={(event) => onDragStart(event, 'document', 'Document')} 
-          draggable
-        >
-          <FileText className="w-4 h-4 text-cyan-600" />
-          <span className="text-sm font-medium text-cyan-900">Document</span>
-        </div>
-
-        <div 
-          className="flex items-center gap-2 p-2 border rounded cursor-grab hover:bg-gray-50" 
-          onDragStart={(event) => onDragStart(event, 'text', 'Text Box')} 
-          draggable
-        >
-          <Type className="w-4 h-4 text-gray-600" />
-          <span className="text-sm font-medium text-gray-900">Text Box</span>
-        </div>
-
-        <div 
-          className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-gray-50" 
-          onClick={onAddLane}
-        >
-          <Columns className="w-4 h-4 text-gray-600" />
-          <span className="text-sm font-medium text-gray-900">Add Swim Lane</span>
-        </div>
-      </div>
-
-      <div className="border-t pt-4 flex flex-col gap-2">
-        <div className="font-bold text-sm text-gray-500 mb-2">Actions</div>
+      <div className={cn("flex flex-col h-full overflow-hidden p-4 min-w-[16rem]", !isOpen && "hidden")}>
+        <div className="flex flex-col gap-4 flex-grow overflow-y-auto">
+          <div className="font-bold text-sm text-gray-500 uppercase">Toolbox</div>
         
-        {onSaveVersion && (
-          <Button onClick={onSaveVersion} className="w-full bg-green-600 hover:bg-green-700 text-white flex items-center gap-2 justify-center">
-            <Save className="w-4 h-4" /> Save Version
-          </Button>
-        )}
+          <div className="flex flex-col gap-2">
+          <div 
+            className="flex items-center gap-2 p-2 border rounded cursor-grab hover:bg-gray-50 bg-blue-100 border-blue-200" 
+            onDragStart={(event) => onDragStart(event, 'workProduct', 'Work Product')} 
+            draggable
+            title="Work Product (W)"
+          >
+            <Box className="w-4 h-4 text-blue-600" />
+            <span className="text-sm font-medium text-blue-900">Work Product</span>
+            <span className="ml-auto text-xs text-gray-400 font-mono">W</span>
+          </div>
 
-        {onLoadFile && (
-          <div className="relative">
-            <input
-              type="file"
-              accept=".json"
-              onChange={handleFileChange}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            />
-            <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 justify-center">
-              <Upload className="w-4 h-4" /> Load from File
+          <div 
+            className="flex items-center gap-2 p-2 border rounded cursor-grab hover:bg-gray-50 bg-yellow-50 border-yellow-200" 
+            onDragStart={(event) => onDragStart(event, 'activity', 'Activity')} 
+            draggable
+            title="Activity (A)"
+          >
+            <Activity className="w-4 h-4 text-yellow-600" />
+            <span className="text-sm font-medium text-yellow-900">Activity</span>
+            <span className="ml-auto text-xs text-gray-400 font-mono">A</span>
+          </div>
+
+          <div 
+            className="flex items-center gap-2 p-2 border rounded cursor-grab hover:bg-gray-50 bg-orange-50 border-orange-200" 
+            onDragStart={(event) => onDragStart(event, 'decision', 'Decision')} 
+            draggable
+            title="Decision (D)"
+          >
+            <GitMerge className="w-4 h-4 text-orange-600" />
+            <span className="text-sm font-medium text-orange-900">Decision</span>
+            <span className="ml-auto text-xs text-gray-400 font-mono">D</span>
+          </div>
+
+          <div 
+            className="flex items-center gap-2 p-2 border rounded cursor-grab hover:bg-gray-50 bg-green-50 border-green-200" 
+            onDragStart={(event) => onDragStart(event, 'process', 'Process')} 
+            draggable
+            title="Process (P)"
+          >
+            <Layers className="w-4 h-4 text-green-600" />
+            <span className="text-sm font-medium text-green-900">Process</span>
+            <span className="ml-auto text-xs text-gray-400 font-mono">P</span>
+          </div>
+
+          <div 
+            className="flex items-center gap-2 p-2 border rounded cursor-grab hover:bg-gray-50 bg-cyan-50 border-cyan-200" 
+            onDragStart={(event) => onDragStart(event, 'document', 'Document')} 
+            draggable
+            title="Document (O)"
+          >
+            <FileText className="w-4 h-4 text-cyan-600" />
+            <span className="text-sm font-medium text-cyan-900">Document</span>
+            <span className="ml-auto text-xs text-gray-400 font-mono">O</span>
+          </div>
+
+          <div 
+            className="flex items-center gap-2 p-2 border rounded cursor-grab hover:bg-gray-50" 
+            onDragStart={(event) => onDragStart(event, 'text', 'Text Box')} 
+            draggable
+            title="Text Box (T)"
+          >
+            <Type className="w-4 h-4 text-gray-600" />
+            <span className="text-sm font-medium text-gray-900">Text Box</span>
+            <span className="ml-auto text-xs text-gray-400 font-mono">T</span>
+          </div>
+
+          <div 
+            className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-gray-50" 
+            onClick={onAddLane}
+            title="Add Swim Lane (L)"
+          >
+            <Columns className="w-4 h-4 text-gray-600" />
+            <span className="text-sm font-medium text-gray-900">Add Swim Lane</span>
+            <span className="ml-auto text-xs text-gray-400 font-mono">L</span>
+          </div>
+        </div>
+        </div>
+
+        <div className="border-t pt-4 mt-auto flex flex-col gap-2">
+          <div className="font-bold text-sm text-gray-500 mb-2">Actions</div>
+          
+          {onSaveVersion && (
+            <Button onClick={onSaveVersion} className="w-full bg-green-600 hover:bg-green-700 text-white flex items-center gap-2 justify-center">
+              <Save className="w-4 h-4" /> Save Version
             </Button>
-          </div>
-        )}
+          )}
 
-        {onDownload && (
-          <Button onClick={onDownload} variant="outline" className="w-full flex items-center gap-2 justify-center">
-            <Download className="w-4 h-4" /> Download JSON
-          </Button>
-        )}
+          {onLoadFile && (
+            <div className="relative">
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleFileChange}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+              <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 justify-center">
+                <Upload className="w-4 h-4" /> Load from File
+              </Button>
+            </div>
+          )}
 
-        {versions.length > 0 && onLoadVersion && (
-          <div className="mt-2">
-            <label className="text-xs font-medium text-gray-500 mb-1 block">Load Version</label>
-            <select 
-              className="w-full border rounded p-2 text-sm"
-              onChange={(e) => onLoadVersion(e.target.value)}
-              defaultValue=""
-            >
-              <option value="" disabled>Select Version</option>
-              {versions.map((v, i) => (
-                <option key={i} value={v.name}>
-                  {v.name} ({new Date(v.created_at).toLocaleDateString()}) - {v.sheets?.length || 0} Sheets
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
+          {onDownload && (
+            <Button onClick={onDownload} variant="outline" className="w-full flex items-center gap-2 justify-center">
+              <Download className="w-4 h-4" /> Download JSON
+            </Button>
+          )}
+
+          {versions.length > 0 && onLoadVersion && (
+            <div className="mt-2">
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Load Version</label>
+              <select 
+                className="w-full border rounded p-2 text-sm"
+                onChange={(e) => onLoadVersion(e.target.value)}
+                defaultValue=""
+              >
+                <option value="" disabled>Select Version</option>
+                {versions.map((v, i) => (
+                  <option key={i} value={v.name}>
+                    {v.name} ({new Date(v.created_at).toLocaleDateString()}) - {v.sheets?.length || 0} Sheets
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
     </div>
 
     </aside>

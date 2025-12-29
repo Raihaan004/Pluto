@@ -45,15 +45,16 @@ export function CreateProjectButton() {
   const [selectedVersion, setSelectedVersion] = useState("")
   const [isCreating, setIsCreating] = useState(false)
 
-  // Don't show button for viewers
-  if (isRoleLoading || role === 'viewer') {
-    return null
-  }
-
+  // All hooks must be called before any conditional returns
   const { data: processes = [] } = useSWR<Process[]>(
     user ? `${process.env.NEXT_PUBLIC_API_URL}/processes/${user.id}` : null,
     fetcher
   )
+
+  // Don't show button for viewers
+  if (isRoleLoading || role === 'viewer') {
+    return null
+  }
 
   const selectedProcess = processes.find(p => p.id.toString() === selectedProcessId)
 

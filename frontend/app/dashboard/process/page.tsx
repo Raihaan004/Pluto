@@ -85,7 +85,7 @@ export default function ProcessPage() {
     setNewName("")
   }
 
-  const ProcessCard = ({ process }: { process: Process }) => (
+  const ProcessCard = ({ process, isDraft }: { process: Process; isDraft: boolean }) => (
     <div className="group relative bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden flex flex-col">
       <div className="p-5 flex flex-col gap-4 flex-grow">
         <div className="flex items-start justify-between gap-3">
@@ -154,21 +154,25 @@ export default function ProcessPage() {
         <Button 
           variant="ghost" 
           size="sm"
-          className="flex-1 text-xs font-medium hover:bg-white hover:shadow-sm"
+          className={`flex-1 text-xs font-medium hover:bg-white hover:shadow-sm ${!isDraft && 'rounded-md'}`}
           onClick={() => router.push(`/dashboard/process/create?id=${process.id}`)}
         >
           <Eye className="h-3.5 w-3.5 mr-2 text-gray-500" />
           Latest Version
         </Button>
-        <div className="w-px h-4 bg-gray-200"></div>
-        <Button 
-          variant="ghost" 
-          size="sm"
-          className="flex-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-          onClick={() => router.push(`/dashboard/process/create?id=${process.id}`)}
-        >
-          Open Editor
-        </Button>
+        {isDraft && (
+          <>
+            <div className="w-px h-4 bg-gray-200"></div>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              className="flex-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+              onClick={() => router.push(`/dashboard/process/create?id=${process.id}`)}
+            >
+              Open Editor
+            </Button>
+          </>
+        )}
       </div>
     </div>
   )
@@ -220,7 +224,7 @@ export default function ProcessPage() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {publishedProcesses.map((process: Process) => (
-                  <ProcessCard key={process.id} process={process} />
+                  <ProcessCard key={process.id} process={process} isDraft={false} />
                 ))}
               </div>
             )}
@@ -248,7 +252,7 @@ export default function ProcessPage() {
             ) : (
               <div className="flex flex-col gap-4">
                 {draftProcesses.map((process: Process) => (
-                  <ProcessCard key={process.id} process={process} />
+                  <ProcessCard key={process.id} process={process} isDraft={true} />
                 ))}
               </div>
             )}

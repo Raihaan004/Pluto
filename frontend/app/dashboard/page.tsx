@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server"
 import { UserSync } from "@/components/UserSync"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Bell, FileText, Calendar, FileInput, CheckCircle, AlertTriangle, Info, ArrowRight, Activity, Clock } from "lucide-react"
-import { BentoGrid, BentoCard } from "@/components/magicui/bento-grid"
+import { BentoGrid, BentoCard } from "@/components/magicui/bento-grid";
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -10,27 +10,28 @@ import { formatDistanceToNow } from "date-fns"
 import { DashboardNotifications } from "@/components/DashboardNotifications"
 import { CreateProjectButton } from "@/components/CreateProjectButton"
 
-// Mock data fetcher since we might not have the backend running perfectly yet
+
 async function getDashboardData(userId: string) {
   try {
     const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard-stats/${userId}`, {
       cache: 'no-store'
-    })
-    if (!res.ok) throw new Error('Failed to fetch')
-    return res.json()
+    });
+    if (!res.ok) throw new Error('Failed to fetch');
+    return res.json();
   } catch (error) {
-    console.error("Error fetching dashboard data:", error)
+    console.error("Error fetching dashboard data:", error);
     return {
       tasks_assigned: 0,
       projects_pending: 0,
+      upcoming_deadlines: 0,
       notifications: []
-    }
+    };
   }
 }
 
 export default async function DashboardPage() {
-  const { userId } = await auth()
-  const data = await getDashboardData(userId || "")
+  const { userId } = await auth();
+  const data = await getDashboardData(userId || "");
 
   const stats = [
     {
@@ -53,7 +54,7 @@ export default async function DashboardPage() {
     },
     {
       Icon: Calendar,
-      name: "Upcoming Deadlines",
+      name: `${data.upcoming_deadlines} Upcoming Deadlines`,
       description: "Stay on top of your schedule",
       href: "/dashboard/calendar",
       cta: "View Calendar",

@@ -227,6 +227,8 @@ const ProcessNode = ({ data, selected }: any) => {
 };
 
 const DocumentNode = ({ data, selected }: any) => {
+  // This is the start of the existing DocumentNode component definition
+  // ... (rest of the component is unchanged)
   return (
     <>
       <NodeResizer color="#0891b2" isVisible={selected} minWidth={100} minHeight={50} />
@@ -257,10 +259,30 @@ const DocumentNode = ({ data, selected }: any) => {
   );
 };
 
+const SwimLaneNode = ({ data, selected }: any) => {
+  return (
+    <>
+      <NodeResizer isVisible={selected} minWidth={200} minHeight={400} />
+      <div 
+        className="w-full h-full rounded-lg border-2 border-dashed bg-gray-100/50"
+        style={{ borderColor: data.color || '#cccccc', zIndex: -1 }}
+      >
+        <div 
+          className="text-center font-bold p-2 bg-gray-200/50 rounded-t-lg"
+          style={{ color: data.textColor || '#555555' }}
+        >
+          {data.label}
+        </div>
+      </div>
+    </>
+  );
+};
+
 export const nodeTypes = {
   workProduct: memo(WorkProductNode),
   activity: memo(ActivityNode),
   decision: memo(DecisionNode),
   process: memo(ProcessNode),
   document: memo(DocumentNode),
+  swimLane: memo(SwimLaneNode),
 };
