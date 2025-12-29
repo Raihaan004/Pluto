@@ -7,12 +7,29 @@ from typing import Optional
 from datetime import datetime
 from email_service import send_email, create_assignment_email_html, create_assignment_email_text
 
+import os
+
 app = FastAPI()
 
-# Configure CORS
+# Configure CORS - Allow both localhost (development) and production frontend URL
+allowed_origins = [
+    "http://localhost:3000",
+    "https://localhost:3000",
+]
+
+# Add production frontend URL from environment variable if set
+frontend_url = os.environ.get("FRONTEND_URL")
+if frontend_url:
+    allowed_origins.append(frontend_url)
+
+# Also allow any Vercel preview deployments (optional, for testing)
+vercel_url = os.environ.get("VERCEL_URL")
+if vercel_url:
+    allowed_origins.append(f"https://{vercel_url}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Allow frontend
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -20,7 +37,26 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"Hello": "World"}
+    return {"Hello": "World", "status": "Backend is running"}
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint to verify Supabase connection"""
+    try:
+        # Try a simple query to verify Supabase connection
+        test_response = supabase.table("users").select("id").limit(1).execute()
+        return {
+            "status": "healthy",
+            "supabase_connected": True,
+            "message": "Backend and Supabase are connected successfully"
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "supabase_connected": False,
+            "error": str(e),
+            "message": "Backend is running but Supabase connection failed. Check SUPABASE_URL and SUPABASE_KEY environment variables."
+        }
 
 import traceback
 
