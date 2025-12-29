@@ -172,17 +172,10 @@ const ProcessCanvas = ({
       };
 
       setNodes((nds) => {
-        const updated = nds.concat(newNode);
-        setTimeout(() => {
-          if (!isReadOnly) {
-            saveHistory();
-            checkForChanges();
-          }
-        }, 100);
-        return updated;
+        return nds.concat(newNode);
       });
     },
-    [reactFlowInstance, setNodes, isReadOnly]
+    [reactFlowInstance, setNodes]
   );
 
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
@@ -541,7 +534,7 @@ export default function CreateProcessPage() {
           
           // Store original saved state
           setOriginalSavedState({
-            sheets: normalizedSheets.map(s => ({
+            sheets: normalizedSheets.map((s: ProcessSheet) => ({
               id: s.id,
               name: s.name,
               nodes: JSON.parse(JSON.stringify(s.nodes)),

@@ -27,8 +27,13 @@ export const useCustomNodeStates = (initialNodes: Node[]): [Node[], React.Dispat
 
       // Only do collision detection if not dragging (to avoid infinite loops during drag)
       const positionChanges = changes.filter(
-        (change): change is NodeChange & { type: 'position' } =>
-          change.type === 'position' && change.position && !change.dragging
+        (change): change is NodeChange & { type: 'position' } => {
+          return (
+            change.type === 'position' &&
+            !!change.position &&
+            change.dragging === false
+          );
+        }
       );
 
       // Skip collision detection entirely if dragging or if no position changes
