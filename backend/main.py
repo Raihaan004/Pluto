@@ -8,6 +8,9 @@ from datetime import datetime
 from email_service import send_email, create_assignment_email_html, create_assignment_email_text
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
 
@@ -206,6 +209,7 @@ def create_notification(notification: NotificationCreate):
                             work_product=work_product,
                             assigned_by_name=assigned_by_name,
                             assigned_by_email=assigned_by_email,
+                            project_id=project.get("id"),
                             project_version=project.get("version_name"),
                             node_status=node_status,
                             deadline=deadline,
@@ -218,6 +222,7 @@ def create_notification(notification: NotificationCreate):
                             work_product=work_product,
                             assigned_by_name=assigned_by_name,
                             assigned_by_email=assigned_by_email,
+                            project_id=project.get("id"),
                             project_version=project.get("version_name"),
                             node_status=node_status,
                             deadline=deadline,
