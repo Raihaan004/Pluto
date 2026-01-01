@@ -1,7 +1,10 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import { Handle, Position, NodeResizer } from 'reactflow';
-import { Link as LinkIcon, FileText, Users, CheckSquare, BookOpen, Paperclip, AlignLeft, MessageSquare } from 'lucide-react';
+import { Link as LinkIcon, FileText, Users, CheckSquare, BookOpen, Paperclip, AlignLeft, MessageSquare, Edit2 } from 'lucide-react';
 import { useProcessContext } from '@/context/ProcessContext';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 const MultiHandles = ({ colorClass }: { colorClass: string }) => {
   const baseClasses = `w-2 h-2 ${colorClass} opacity-0 group-hover:opacity-100 transition-opacity`;
@@ -64,26 +67,30 @@ const NodeIcons = ({ data }: { data: any }) => {
   );
 };
 
-const StatusIndicator = ({ state }: { state: string }) => {
-  // Default to Draft if no state
-  const currentState = state || 'Draft';
+const StatusIndicator = ({ data }: { data: any }) => {
+  const state = data.state || 'None';
   
+  if (state === 'None') return null;
+
   let label = 'D';
   let bgClass = 'bg-gray-200';
   let textClass = 'text-gray-700';
   
-  if (currentState === 'Review') {
+  if (state === 'Refined') {
     label = 'R';
     bgClass = 'bg-yellow-200';
     textClass = 'text-yellow-800';
-  } else if (currentState === 'Published') {
-    label = 'P';
+  } else if (state === 'Final') {
+    label = 'F';
     bgClass = 'bg-green-200';
     textClass = 'text-green-800';
   }
 
   return (
-    <div className={`absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ${bgClass} ${textClass}`} title={`Status: ${currentState}`}>
+    <div 
+      className={`absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm pointer-events-none ${bgClass} ${textClass}`} 
+      title={`Status: ${state}`}
+    >
       {label}
     </div>
   );
@@ -102,6 +109,7 @@ const WorkProductNode = ({ data, selected }: any) => {
         }}
       >
         <NodeIcons data={data} />
+        <StatusIndicator data={data} />
         <div 
           className="text-sm"
           style={{
@@ -131,7 +139,7 @@ const ActivityNode = ({ data, selected }: any) => {
         }}
       >
         <NodeIcons data={data} />
-        <StatusIndicator state={data.state} />
+        <StatusIndicator data={data} />
         <div 
           className="text-sm"
           style={{
@@ -169,7 +177,7 @@ const DecisionNode = ({ data, selected }: any) => {
               <NodeIcons data={data} />
            </div>
            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-auto">
-              <StatusIndicator state={data.state} />
+              <StatusIndicator data={data} />
            </div>
            <div 
               className="text-sm px-6"
@@ -209,7 +217,7 @@ const ProcessNode = ({ data, selected }: any) => {
         }}
       >
         <NodeIcons data={data} />
-        <StatusIndicator state={data.state} />
+        <StatusIndicator data={data} />
         <div 
           className="text-sm"
           style={{
@@ -242,7 +250,7 @@ const DocumentNode = ({ data, selected }: any) => {
         }}
       >
         <NodeIcons data={data} />
-        <StatusIndicator state={data.state} />
+        <StatusIndicator data={data} />
         <div 
           className="text-sm"
           style={{
@@ -259,7 +267,24 @@ const DocumentNode = ({ data, selected }: any) => {
   );
 };
 
-const SwimLaneNode = ({ data, selected }: any) => {
+const SwimLaneNode = ({ id, data, selected }: any) => {
+  const { setNodes } = useProcessContext();
+  const [label, setLabel] = useState(data.label);
+
+  const handleLabelChange = (newLabel: string) => {
+    setLabel(newLabel);
+    if (setNodes) {
+      setNodes((nds) =>
+        nds.map((node) => {
+          if (node.id === id) {
+            return { ...node, data: { ...node.data, label: newLabel } };
+          }
+          return node;
+        })
+      );
+    }
+  };
+
   return (
     <>
       <NodeResizer isVisible={selected} minWidth={200} minHeight={400} />
@@ -267,12 +292,28 @@ const SwimLaneNode = ({ data, selected }: any) => {
         className="w-full h-full rounded-lg border-2 border-dashed bg-gray-100/50"
         style={{ borderColor: data.color || '#cccccc', zIndex: -1 }}
       >
-        <div 
-          className="text-center font-bold p-2 bg-gray-200/50 rounded-t-lg"
-          style={{ color: data.textColor || '#555555' }}
-        >
-          {data.label}
-        </div>
+        <Popover>
+          <PopoverTrigger asChild>
+            <div 
+              className="text-center font-bold p-2 bg-gray-200/50 rounded-t-lg cursor-pointer hover:bg-gray-300/50 transition-colors flex items-center justify-center gap-2"
+              style={{ color: data.textColor || '#555555' }}
+            >
+              {data.label}
+              <Edit2 className="w-3 h-3 opacity-0 group-hover:opacity-100" />
+            </div>
+          </PopoverTrigger>
+          <PopoverContent className="w-64">
+            <div className="space-y-2">
+              <h4 className="font-medium text-sm">Edit Lane Label</h4>
+              <Input 
+                value={label} 
+                onChange={(e) => handleLabelChange(e.target.value)}
+                placeholder="Enter lane name..."
+                autoFocus
+              />
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
     </>
   );

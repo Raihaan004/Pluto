@@ -150,6 +150,7 @@ def create_notification(notification: NotificationCreate):
         metadata = notification.metadata or {}
         if metadata.get("node_id") and metadata.get("project_id"):
             try:
+                print(f"Attempting to send email for notification to user {notification.user_id}")
                 # Get recipient user details
                 recipient_res = supabase.table("users").select("email, first_name, last_name").eq("clerk_id", notification.user_id).execute()
                 if recipient_res.data:
@@ -183,7 +184,7 @@ def create_notification(notification: NotificationCreate):
                         
                         # Get node details from metadata
                         work_product = metadata.get("node_label", notification.message.split('"')[1] if '"' in notification.message else "Untitled")
-                        node_status = metadata.get("node_status", "Draft")
+                        node_status = metadata.get("node_status", "None")
                         deadline = metadata.get("deadline")
                         # Format deadline if it's a date string
                         if deadline:
@@ -223,7 +224,12 @@ def create_notification(notification: NotificationCreate):
                             description=description
                         )
                         
+                        print(f"Sending email to {recipient_email}")
                         send_email(recipient_email, subject, html_body, text_body)
+                    else:
+                        print(f"Skipping email: recipient_email={recipient_email}, project={project}")
+                else:
+                    print(f"Recipient not found for user_id {notification.user_id}")
             except Exception as email_error:
                 # Don't fail the notification creation if email fails
                 print(f"Error sending email notification: {email_error}")
@@ -231,24 +237,6 @@ def create_notification(notification: NotificationCreate):
                 traceback.print_exc()
         
         return {"status": "created", "data": response.data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/notifications/{user_id}")
-def get_notifications(user_id: str):
-    try:
-        response = supabase.table("notifications").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
-        return response.data
-    except Exception as e:
-        print(f"Error in GET /notifications: {e}")
-        # If table doesn't exist or other error, return empty list to prevent frontend crash
-        return []
-
-@app.put("/notifications/{notification_id}/read")
-def mark_notification_read(notification_id: int):
-    try:
-        data = supabase.table("notifications").update({"read": True}).eq("id", notification_id).execute()
-        return {"status": "updated", "data": data.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -262,65 +250,111 @@ def get_dashboard_stats(clerk_id: str):
         # 2. Fetch projects count (where user is owner or collaborator)
         # Get all projects to check collaborators and ownership
         # We need 'user_id' to check ownership and 'collaborators' to check collaboration
-        all_projects_response = supabase.table("projects").select("id, user_id, collaborators, sheets").execute()
+        all_projects_response = supabase.table("projects").select("id, name, user_id, collaborators, sheets, progress, updated_at, version_name").execute()
         all_projects = all_projects_response.data if all_projects_response.data else []
         
-        projects_pending = 0
+        user_projects = []
         tasks_assigned = 0
         upcoming_deadlines = 0
         
-        # Set to track unique task IDs to avoid double counting if multiple references exist (though unlikely in this structure)
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        next_week = now + timedelta(days=7)
+        
+        # Set to track unique task IDs to avoid double counting
         assigned_task_ids = set()
 
         for project in all_projects:
-            # Check Project Pending Count
+            # Check Project Ownership/Collaboration
             is_owner = project.get("user_id") == clerk_id
             collaborators = project.get("collaborators", [])
             is_collaborator = any(c.get("clerk_id") == clerk_id for c in collaborators)
             
             if is_owner or is_collaborator:
-                projects_pending += 1
+                # Calculate automatic progress (Green Bar)
+                # Based on nodes assigned to the user where state != 'Draft'
+                assigned_nodes = 0
+                changed_nodes = 0
+                sheets = project.get("sheets", [])
+                for sheet in sheets:
+                    nodes = sheet.get("nodes", [])
+                    for node in nodes:
+                        data = node.get("data", {})
+                        responsibility = data.get("responsibility", [])
+                        support = data.get("support", [])
+                        
+                        if clerk_id in responsibility or clerk_id in support:
+                            assigned_nodes += 1
+                            # Check if state has changed from 'Draft' or 'None'
+                            node_state = data.get("state") or data.get("status") or "None"
+                            if node_state not in ["Draft", "None"]:
+                                changed_nodes += 1
+                
+                manual_progress = project.get("progress", 0)
+                if assigned_nodes > 0:
+                    # Green Bar increases until it matches the Blue Bar
+                    auto_progress = (changed_nodes / assigned_nodes) * manual_progress
+                else:
+                    auto_progress = 0
 
-            # Check Tasks Assigned
-            # Iterate through sheets and nodes to find assignments
-            sheets = project.get("sheets", [])
-            for sheet in sheets:
-                nodes = sheet.get("nodes", [])
-                for node in nodes:
-                    data = node.get("data", {})
-                    
-                    # Check responsibility
-                    responsibility = data.get("responsibility", [])
-                    # Check support
-                    support = data.get("support", [])
-                    
-                    # If user is in responsibility or support list
-                    if clerk_id in responsibility or clerk_id in support:
-                        # Use composite key of project_id and node_id to ensure uniqueness across projects
-                        project_id = project.get("id", "unknown")
-                        node_id = node.get("id", "unknown")
-                        assigned_task_ids.add(f"{project_id}_{node_id}")
+                user_projects.append({
+                    "id": project["id"],
+                    "name": project["name"],
+                    "version_name": project.get("version_name", "v1.0"),
+                    "progress": manual_progress, # Manual (Blue Bar)
+                    "auto_progress": round(auto_progress), # Automatic (Green Bar)
+                    "updated_at": project["updated_at"]
+                })
 
-                    # Check for deadlines
-                    if data.get("deadline"):
-                        upcoming_deadlines += 1
+                # Check Tasks Assigned
+                # Iterate through sheets and nodes to find assignments
+                sheets = project.get("sheets", [])
+                for sheet in sheets:
+                    nodes = sheet.get("nodes", [])
+                    for node in nodes:
+                        data = node.get("data", {})
+                        
+                        # Check responsibility
+                        responsibility = data.get("responsibility", [])
+                        # Check support
+                        support = data.get("support", [])
+                        
+                        # If user is in responsibility or support list
+                        if clerk_id in responsibility or clerk_id in support:
+                            project_id = project.get("id", "unknown")
+                            node_id = node.get("id", "unknown")
+                            assigned_task_ids.add(f"{project_id}_{node_id}")
+
+                        # Check for upcoming deadlines
+                        deadline_str = data.get("deadline")
+                        if deadline_str:
+                            try:
+                                deadline = datetime.fromisoformat(deadline_str.replace('Z', '+00:00'))
+                                if now <= deadline <= next_week:
+                                    upcoming_deadlines += 1
+                            except:
+                                continue
 
         tasks_assigned = len(assigned_task_ids)
+        
+        # Sort user projects by updated_at and take top 5
+        user_projects.sort(key=lambda x: x["updated_at"], reverse=True)
+        top_projects = user_projects[:5]
 
         return {
             "tasks_assigned": tasks_assigned,
-            "projects_pending": projects_pending,
             "upcoming_deadlines": upcoming_deadlines,
-            "notifications": notifications
+            "notifications": notifications,
+            "projects": top_projects
         }
     except Exception as e:
         print(f"Error fetching dashboard stats: {e}")
         # Return empty structure on error to prevent frontend crash
         return {
             "tasks_assigned": 0,
-            "projects_pending": 0,
             "upcoming_deadlines": 0,
-            "notifications": []
+            "notifications": [],
+            "projects": []
         }
 
 @app.post("/processes")
@@ -498,7 +532,7 @@ def get_user_tasks(user_id: str):
                             "work_product": data.get("label", "Untitled Node"),
                             "version": project.get("version_name", "1.0"),
                             "author_id": project["user_id"],
-                            "status": data.get("state", "Draft"),
+                            "status": data.get("state", "None"),
                             "verification_reviewers": support, # List of support user IDs
                             "verification_comments": data.get("verificationComments", ""),
                             "author_comments": data.get("authorComments", ""),
@@ -687,6 +721,12 @@ def update_project(project_id: int, update: ProjectUpdate):
             
         if update.name is not None:
             data["name"] = update.name
+
+        if update.progress is not None:
+            data["progress"] = update.progress
+            
+        if update.version_name is not None:
+            data["version_name"] = update.version_name
             
         response = supabase.table("projects").update(data).eq("id", project_id).execute()
         return {"status": "updated", "data": response.data}
@@ -739,6 +779,7 @@ def get_calendar_events(user_id: str):
                         events.append({
                             "id": f"{project['id']}-{node['id']}",
                             "title": node['data'].get('label', 'Untitled Task'),
+                            "project_name": project['name'],
                             "date": node['data']['deadline'],
                             "type": "task", # All deadlines are considered tasks for now
                             "route": f"/dashboard/process/create?projectId={project['id']}"

@@ -208,7 +208,7 @@ const ProcessCanvas = ({
   return (
     <div className="flex-grow h-full bg-gray-50 relative flex flex-col" ref={reactFlowWrapper}>
       <div className="flex-grow relative">
-        <ProcessProvider openNodeDialog={openNodeDialog}>
+        <ProcessProvider openNodeDialog={openNodeDialog} setNodes={setNodes}>
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
@@ -244,7 +244,7 @@ const ProcessCanvas = ({
         </ProcessProvider>
       </div>
 
-      {selectedNode && !isReadOnly && (
+      {selectedNode && !isReadOnly && selectedNode.type !== 'swimLane' && (
         <PropertiesPanel 
             selectedNode={selectedNode} 
             onSave={handleSaveProperties} 
@@ -294,6 +294,7 @@ export default function CreateProcessPage() {
   const [projectProcessId, setProjectProcessId] = useState<number | null>(null);
   const [rfInstance, setRfInstance] = useState<any>(null);
   const [projectName, setProjectName] = useState('Create New Process');
+  const [versionName, setVersionName] = useState<string | null>(null);
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editingProjectNameValue, setEditingProjectNameValue] = useState('');
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
@@ -307,30 +308,56 @@ export default function CreateProcessPage() {
       nodes: [],
       edges: [],
     };
-    setSheets(prev => [...prev, newSheet]);
-    handleSwitchSheet(newSheetId);
+    
+    // Save current sheet's state before switching
+    const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
+    let updatedSheets = [...sheets, newSheet];
+    if (currentSheetIndex !== -1) {
+        updatedSheets[currentSheetIndex] = { ...updatedSheets[currentSheetIndex], nodes, edges };
+    }
+    
+    setSheets(updatedSheets);
+    handleSwitchSheet(newSheetId, updatedSheets);
   };
 
   const handleDeleteSheet = (sheetId: string) => {
     if (sheetId === 'parent') return;
-    setSheets(prev => prev.filter(s => s.id !== sheetId));
+    const updatedSheets = sheets.filter(s => s.id !== sheetId);
+    setSheets(updatedSheets);
     if (activeSheetId === sheetId) {
-      handleSwitchSheet('parent');
+      handleSwitchSheet('parent', updatedSheets);
     }
   };
 
-  const handleSwitchSheet = (sheetId: string) => {
+  const handleSwitchSheet = (sheetId: string, sheetsArray?: ProcessSheet[]) => {
+    const sheetsToUse = sheetsArray || sheets;
+    
     // Save current sheet's state before switching (including all nodes with their positions)
-    const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
-    let updatedSheets = [...sheets];
-    if (currentSheetIndex !== -1) {
-        updatedSheets[currentSheetIndex] = { ...updatedSheets[currentSheetIndex], nodes, edges };
-        setSheets(updatedSheets);
+    // Only if we're not already using a provided sheetsArray (which should already be updated)
+    if (!sheetsArray) {
+      const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
+      if (currentSheetIndex !== -1) {
+          const updatedSheets = [...sheets];
+          updatedSheets[currentSheetIndex] = { ...updatedSheets[currentSheetIndex], nodes, edges };
+          setSheets(updatedSheets);
+          // We continue with the updated sheets for the switch
+          const newSheet = updatedSheets.find(s => s.id === sheetId);
+          if (newSheet) {
+            setActiveSheetId(sheetId);
+            const normalizedNodes = (newSheet.nodes || []).map((node: any) => 
+              node.type === 'swimLane' && node.zIndex === undefined
+                ? { ...node, zIndex: -1 }
+                : node
+            );
+            setNodes(normalizedNodes);
+            setEdges(newSheet.edges || []);
+          }
+          return;
+      }
     }
 
-    // Switch to new sheet (use updated sheets if we just updated, otherwise use original)
+    // Switch to new sheet using the provided or current sheets
     setActiveSheetId(sheetId);
-    const sheetsToUse = currentSheetIndex !== -1 ? updatedSheets : sheets;
     const newSheet = sheetsToUse.find(s => s.id === sheetId);
     if (newSheet) {
       // Ensure all swimLane nodes have zIndex: -1
@@ -368,7 +395,7 @@ export default function CreateProcessPage() {
 
   // Check if there are unsaved changes
   const checkForChanges = useCallback(() => {
-    if (!originalSavedState || !projectId) {
+    if (!originalSavedState || (!projectId && !processId)) {
       setHasUnsavedChanges(false);
       return;
     }
@@ -393,7 +420,7 @@ export default function CreateProcessPage() {
     const originalStateStr = JSON.stringify(originalSavedState);
 
     setHasUnsavedChanges(currentStateStr !== originalStateStr);
-  }, [originalSavedState, sheets, activeSheetId, nodes, edges, projectName, projectId]);
+  }, [originalSavedState, sheets, activeSheetId, nodes, edges, projectName, projectId, processId]);
 
   // Save history on every change
   const saveHistory = useCallback(() => {
@@ -470,6 +497,7 @@ export default function CreateProcessPage() {
         const data = projectResponse.data;
         
         setProjectName(data.name || 'Untitled Project');
+        setVersionName(data.version_name || null);
         setProjectOwnerId(data.user_id || null);
         setProjectProcessId(data.process_id || null);
         
@@ -589,6 +617,18 @@ export default function CreateProcessPage() {
           setActiveSheetId(normalizedSheets[0].id);
           setNodes(normalizedSheets[0].nodes || []);
           setEdges(normalizedSheets[0].edges || []);
+          
+          // Store original saved state
+          setOriginalSavedState({
+            sheets: normalizedSheets.map((s: ProcessSheet) => ({
+              id: s.id,
+              name: s.name,
+              nodes: JSON.parse(JSON.stringify(s.nodes)),
+              edges: JSON.parse(JSON.stringify(s.edges))
+            })),
+            projectName: processData.name || 'Untitled Process'
+          });
+          setHasUnsavedChanges(false);
         }
         if (processData.versions) {
           setVersions(processData.versions);
@@ -732,6 +772,7 @@ export default function CreateProcessPage() {
         )
       }));
       setSheets(normalizedSheets);
+      setVersionName(versionName);
       if (normalizedSheets.length > 0) {
         setActiveSheetId(normalizedSheets[0].id);
         setNodes(normalizedSheets[0].nodes || []);
@@ -786,7 +827,8 @@ export default function CreateProcessPage() {
 
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/project/${projectId}`, {
         name: projectName,
-        sheets: sheetsToSave
+        sheets: sheetsToSave,
+        version_name: versionName
       });
       
       // Update original saved state
@@ -808,6 +850,63 @@ export default function CreateProcessPage() {
       setIsSaving(false);
     }
   }, [projectId, isReadOnly, hasUnsavedChanges, sheets, activeSheetId, nodes, edges, projectName]);
+
+  const handleSaveProcess = useCallback(async (status: 'draft' | 'published') => {
+    if (!user?.id || isReadOnly) return;
+    
+    setIsSaving(true);
+    try {
+      // Save current sheet state before saving
+      const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
+      let updatedSheets = [...sheets];
+      if (currentSheetIndex !== -1) {
+        updatedSheets[currentSheetIndex] = { ...updatedSheets[currentSheetIndex], nodes, edges };
+        setSheets(updatedSheets);
+      }
+
+      const payload = {
+        user_id: user.id,
+        name: projectName,
+        sheets: updatedSheets.map(s => ({
+          id: s.id,
+          name: s.name,
+          nodes: s.nodes,
+          edges: s.edges
+        })),
+        status: status
+      };
+
+      if (processId) {
+        await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/processes/${processId}`, payload);
+      } else {
+        const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/processes`, payload);
+        if (response.data.data && response.data.data[0]) {
+          const newId = response.data.data[0].id;
+          router.push(`/dashboard/process/create?id=${newId}`);
+        }
+      }
+      
+      // Update original saved state
+      const sheetsToSave = updatedSheets.map(s => ({
+        id: s.id,
+        name: s.name,
+        nodes: JSON.parse(JSON.stringify(s.nodes)),
+        edges: JSON.parse(JSON.stringify(s.edges))
+      }));
+      
+      setOriginalSavedState({
+        sheets: sheetsToSave,
+        projectName
+      });
+      setHasUnsavedChanges(false);
+      alert(`Process ${status === 'draft' ? 'saved as draft' : 'published'} successfully!`);
+    } catch (error) {
+      console.error('Failed to save process:', error);
+      alert('Failed to save process');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [user?.id, isReadOnly, sheets, activeSheetId, nodes, edges, projectName, processId, router]);
 
   const handleDeleteProject = useCallback(async () => {
     if (!projectId || isReadOnly) return;
@@ -973,6 +1072,11 @@ export default function CreateProcessPage() {
               title={projectId && !isReadOnly ? "Double-click to rename" : undefined}
             >
               {projectName || 'Create New Process'}
+              {versionName && (
+                <span className="ml-2 text-sm font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">
+                  {versionName}
+                </span>
+              )}
             </h1>
           )}
         </div>
@@ -1002,23 +1106,43 @@ export default function CreateProcessPage() {
             <Trash2 size={18} className="text-red-600" />
           </button>
           <div className="w-px h-6 bg-gray-300 mx-1" />
-          {projectId && (
-            <ShareProjectDialog
-              projectId={projectId}
-              users={users}
-              currentCollaborators={currentCollaborators}
-              projectOwnerId={projectOwnerId || undefined}
-              onUpdate={handleUpdateCollaborators}
-            />
-          )}
-          {hasUnsavedChanges && (
-            <Button
-              onClick={handleSaveProject}
-              disabled={!projectId || isReadOnly || isSaving || !hasUnsavedChanges}
-              className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSaving ? 'Saving...' : 'Save Project'}
-            </Button>
+          {projectId ? (
+            <>
+              <ShareProjectDialog
+                projectId={projectId}
+                users={users}
+                currentCollaborators={currentCollaborators}
+                projectOwnerId={projectOwnerId || undefined}
+                onUpdate={handleUpdateCollaborators}
+              />
+              {hasUnsavedChanges && (
+                <Button
+                  onClick={handleSaveProject}
+                  disabled={isReadOnly || isSaving || !hasUnsavedChanges}
+                  className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSaving ? 'Saving...' : 'Save Project'}
+                </Button>
+              )}
+            </>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => handleSaveProcess('draft')}
+                disabled={isReadOnly || isSaving}
+                className="border-blue-600 text-blue-600 hover:bg-blue-50 h-9 px-4"
+              >
+                {isSaving ? 'Saving...' : 'Save Draft'}
+              </Button>
+              <Button
+                onClick={() => handleSaveProcess('published')}
+                disabled={isReadOnly || isSaving}
+                className="bg-blue-600 hover:bg-blue-700 text-white h-9 px-4"
+              >
+                {isSaving ? 'Publishing...' : 'Publish'}
+              </Button>
+            </div>
           )}
         </div>
       </div>

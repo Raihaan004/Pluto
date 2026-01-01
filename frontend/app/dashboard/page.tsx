@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { formatDistanceToNow } from "date-fns"
 import { DashboardNotifications } from "@/components/DashboardNotifications"
 import { CreateProjectButton } from "@/components/CreateProjectButton"
+import ProjectProgressGraph from "@/components/ProjectProgressGraph"
 
 
 async function getDashboardData(userId: string) {
@@ -22,9 +23,9 @@ async function getDashboardData(userId: string) {
     console.error("Error fetching dashboard data:", error);
     return {
       tasks_assigned: 0,
-      projects_pending: 0,
       upcoming_deadlines: 0,
-      notifications: []
+      notifications: [],
+      projects: []
     };
   }
 }
@@ -44,20 +45,11 @@ export default async function DashboardPage() {
       className: "lg:col-span-1 lg:row-span-1 transition-all hover:shadow-lg border-blue-100/50",
     },
     {
-      Icon: FileInput,
-      name: `${data.projects_pending} Pending Projects`,
-      description: "Projects in progress",
-      href: "/dashboard/projects",
-      cta: "View Projects",
-      background: <div className="absolute -right-20 -top-20 opacity-60 bg-purple-100 w-64 h-64 rounded-full blur-3xl" />,
-      className: "lg:col-span-1 lg:row-span-1 transition-all hover:shadow-lg border-purple-100/50",
-    },
-    {
       Icon: Calendar,
       name: `${data.upcoming_deadlines} Upcoming Deadlines`,
       description: "Stay on top of your schedule",
-      href: "/dashboard/calendar",
-      cta: "View Calendar",
+      href: "/dashboard/deadlines",
+      cta: "View Deadlines",
       background: <div className="absolute -right-20 -top-20 opacity-60 bg-pink-100 w-64 h-64 rounded-full blur-3xl" />,
       className: "lg:col-span-1 lg:row-span-1 transition-all hover:shadow-lg border-pink-100/50",
     },
@@ -84,34 +76,8 @@ export default async function DashboardPage() {
             ))}
             </BentoGrid>
 
-            {/* Activity Feed / Chart Placeholder */}
-            <Card className="border-none shadow-lg bg-white overflow-hidden rounded-2xl">
-                <CardHeader className="border-b bg-gray-50/50 pb-4">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <CardTitle className="flex items-center gap-2 text-xl">
-                                <Activity className="w-5 h-5 text-blue-600" />
-                                Activity Overview
-                            </CardTitle>
-                            <CardDescription className="mt-1">Your recent activity and project progress.</CardDescription>
-                        </div>
-                        <div className="flex gap-2">
-                            <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-                            <span className="text-xs text-gray-500 font-medium">Live</span>
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent className="h-[350px] flex items-center justify-center bg-white p-6 relative">
-                    <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
-                    <div className="text-center text-gray-400 relative z-10 bg-white/80 p-8 rounded-2xl backdrop-blur-sm border border-gray-100 shadow-sm">
-                        <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4 rotate-3 hover:rotate-6 transition-transform">
-                            <FileText className="w-8 h-8 text-blue-500" />
-                        </div>
-                        <h3 className="font-semibold text-gray-900 mb-1">No Activity Yet</h3>
-                        <p className="text-sm max-w-[200px] mx-auto">Start working on your projects to see your activity chart here.</p>
-                    </div>
-                </CardContent>
-            </Card>
+            {/* Activity Overview Graph */}
+            <ProjectProgressGraph projects={data.projects} userId={userId || ""} />
         </div>
 
         {/* Notifications Panel */}

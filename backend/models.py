@@ -40,7 +40,7 @@ class ProcessPackageCreate(BaseModel):
     name: str
     sheets: list[ProcessSheet]
     versions: list = []
-    status: str = 'published'
+    status: str = 'Final'
 
 class ProcessRename(BaseModel):
     name: str
@@ -58,6 +58,8 @@ class ProjectCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     sheets: Optional[list[ProcessSheet]] = None
     name: Optional[str] = None
+    progress: Optional[int] = None
+    version_name: Optional[str] = None
 
 class CollaboratorAdd(BaseModel):
     user_id: str

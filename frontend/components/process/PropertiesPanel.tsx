@@ -29,7 +29,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
   const { user } = useUser();
   const [formData, setFormData] = useState<any>({
     label: '',
-    state: 'Draft',
+    state: 'None',
     backgroundColor: '',
     textColor: '',
     fontSize: 14,
@@ -61,18 +61,25 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [currentAddField, setCurrentAddField] = useState('');
   const [newItemValue, setNewItemValue] = useState('');
+  const [newLinkLabel, setNewLinkLabel] = useState('');
 
   const openAddDialog = (field: string) => {
     setCurrentAddField(field);
     setNewItemValue('');
+    setNewLinkLabel('');
     setIsAddDialogOpen(true);
   };
 
   const handleAddItem = () => {
     if (newItemValue && currentAddField) {
+      let itemToAdd: any = newItemValue;
+      if (currentAddField === 'links') {
+        itemToAdd = { url: newItemValue, label: newLinkLabel || newItemValue };
+      }
+      
       setFormData((prev: any) => ({
         ...prev,
-        [currentAddField]: [...(prev[currentAddField] || []), newItemValue]
+        [currentAddField]: [...(prev[currentAddField] || []), itemToAdd]
       }));
       setIsAddDialogOpen(false);
     }
@@ -103,7 +110,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
     if (selectedNode) {
       setFormData({
         label: selectedNode.data.label || '',
-        state: selectedNode.data.state || 'Draft',
+        state: selectedNode.data.state || 'None',
         backgroundColor: selectedNode.data.backgroundColor || '',
         textColor: selectedNode.data.textColor || '',
         fontSize: selectedNode.data.fontSize || 14,
@@ -349,9 +356,10 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
             onChange={(e) => handleStateChange(e.target.value)}
             className="w-full p-2 border rounded-md text-sm outline-none"
           >
+            <option value="None">None</option>
             <option value="Draft">Draft</option>
-            <option value="Review">Review</option>
-            <option value="Published">Published</option>
+            <option value="Refined">Refined</option>
+            <option value="Final">Final</option>
           </select>
         </div>
         )}
@@ -514,14 +522,21 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
                 </button>
             </div>
             <div className="space-y-2">
-                {formData.links?.map((link: string, i: number) => (
-                    <div key={i} className="flex items-center gap-2 bg-gray-50 p-2 rounded text-sm">
-                        <a href={link} target="_blank" rel="noopener noreferrer" className="flex-1 truncate text-blue-600 hover:underline">{link}</a>
-                        <button onClick={() => handleArrayRemove('links', i)} className="text-red-500 hover:text-red-700">
-                            <Trash2 size={14} />
-                        </button>
-                    </div>
-                ))}
+                {formData.links?.map((link: any, i: number) => {
+                    const url = typeof link === 'string' ? link : link.url;
+                    const label = typeof link === 'string' ? link : link.label;
+                    return (
+                        <div key={i} className="flex items-center gap-2 bg-gray-50 p-2 rounded text-sm">
+                            <div className="flex-1 truncate">
+                                <div className="font-medium text-gray-900">{label}</div>
+                                <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">{url}</a>
+                            </div>
+                            <button onClick={() => handleArrayRemove('links', i)} className="text-red-500 hover:text-red-700">
+                                <Trash2 size={14} />
+                            </button>
+                        </div>
+                    );
+                })}
             </div>
         </div>
 
@@ -676,17 +691,30 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
           <DialogHeader>
             <DialogTitle>Add New {currentAddField.charAt(0).toUpperCase() + currentAddField.slice(1)}</DialogTitle>
           </DialogHeader>
-          <div className="py-4">
-            <Input
-              value={newItemValue}
-              onChange={(e) => setNewItemValue(e.target.value)}
-              placeholder={`Enter ${currentAddField} URL...`}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleAddItem();
-                }
-              }}
-            />
+          <div className="py-4 space-y-4">
+            {currentAddField === 'links' && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Link Label</label>
+                <Input
+                  value={newLinkLabel}
+                  onChange={(e) => setNewLinkLabel(e.target.value)}
+                  placeholder="Enter label (e.g. Documentation)"
+                />
+              </div>
+            )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{currentAddField === 'links' ? 'URL' : 'Value'}</label>
+              <Input
+                value={newItemValue}
+                onChange={(e) => setNewItemValue(e.target.value)}
+                placeholder={`Enter ${currentAddField} ${currentAddField === 'links' ? 'URL' : 'value'}...`}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleAddItem();
+                  }
+                }}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>

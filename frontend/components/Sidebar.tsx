@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Workflow, FolderKanban, HelpCircle, Shield, ChevronLeft, ChevronRight, ClipboardList, LogOut } from "lucide-react"
+import { LayoutDashboard, Workflow, FolderKanban, HelpCircle, Shield, ChevronLeft, ChevronRight, ClipboardList, LogOut, Clock } from "lucide-react"
 import { UserButton, useUser } from "@clerk/nextjs"
 import { cn } from "@/lib/utils"
 import { useUserRole } from "@/context/UserRoleContext"
@@ -28,6 +28,11 @@ const sidebarItems = [
     title: "Tasks",
     href: "/dashboard/tasks",
     icon: ClipboardList,
+  },
+  {
+    title: "Deadlines",
+    href: "/dashboard/deadlines",
+    icon: Clock,
   },
   {
     title: "Help",

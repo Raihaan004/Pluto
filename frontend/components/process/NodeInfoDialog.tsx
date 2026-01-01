@@ -40,10 +40,10 @@ export const NodeInfoDialog = ({ isOpen, onClose, data, users = [] }: NodeInfoDi
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             {data.label || 'Untitled Node'}
-            {data.state && (
+            {data.state && data.state !== 'None' && (
               <span className={`text-xs px-2 py-0.5 rounded-full border ${
-                data.state === 'Published' ? 'bg-green-100 text-green-800 border-green-200' :
-                data.state === 'Review' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                data.state === 'Final' ? 'bg-green-100 text-green-800 border-green-200' :
+                data.state === 'Refined' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
                 'bg-gray-100 text-gray-800 border-gray-200'
               }`}>
                 {data.state}
@@ -70,18 +70,27 @@ export const NodeInfoDialog = ({ isOpen, onClose, data, users = [] }: NodeInfoDi
                 <ExternalLink size={16} /> Links
               </h4>
               <div className="flex flex-col gap-2">
-                {data.links.map((link: string, i: number) => (
-                  <a 
-                    key={i} 
-                    href={link.startsWith('http') ? link : `https://${link}`} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-sm text-blue-600 hover:underline flex items-center gap-2 p-2 hover:bg-blue-50 rounded transition-colors"
-                  >
-                    <ExternalLink size={14} />
-                    {link}
-                  </a>
-                ))}
+                {data.links.map((link: any, i: number) => {
+                  const url = typeof link === 'string' ? link : link.url;
+                  const label = typeof link === 'string' ? link : link.label;
+                  const href = url.startsWith('http') ? url : `https://${url}`;
+                  
+                  return (
+                    <a 
+                      key={i} 
+                      href={href} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-sm text-blue-600 hover:underline flex flex-col gap-0.5 p-2 hover:bg-blue-50 rounded transition-colors border border-transparent hover:border-blue-100"
+                    >
+                      <div className="flex items-center gap-2 font-medium">
+                        <ExternalLink size={14} />
+                        {label}
+                      </div>
+                      {label !== url && <div className="text-xs text-gray-400 ml-5 truncate">{url}</div>}
+                    </a>
+                  );
+                })}
               </div>
             </div>
           )}

@@ -60,6 +60,11 @@ create policy "Enable update access for all users"
 on public.notifications for update
 using ( true );
 
+drop policy if exists "Enable delete access for all users" on public.notifications;
+create policy "Enable delete access for all users"
+on public.notifications for delete
+using ( true );
+
 
 -- 3. Processes Table
 create table if not exists public.processes (
