@@ -36,7 +36,7 @@ export const NodeInfoDialog = ({ isOpen, onClose, data, users = [] }: NodeInfoDi
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-125">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             {data.label || 'Untitled Node'}

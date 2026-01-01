@@ -23,6 +23,7 @@ export default function EditableStepEdge({
   style,
   data,
   selected,
+  animated,
 }: EdgeProps) {
   const { setEdges, screenToFlowPosition } = useReactFlow();
   const points: Point[] = data?.points || [];
@@ -174,9 +175,16 @@ export default function EditableStepEdge({
     });
   }
 
+  const edgeColor = data?.edgeStyle === 'red-dashed' ? '#ef4444' : '#2563eb';
+  const midpointColor = data?.edgeStyle === 'red-dashed' ? '#fca5a5' : '#93c5fd';
+
   return (
     <>
-      <BaseEdge path={path} markerEnd={markerEnd} style={style} />
+      <BaseEdge 
+        path={path} 
+        markerEnd={markerEnd} 
+        style={style} 
+      />
       
       {selected && (
       <EdgeLabelRenderer>
@@ -191,7 +199,7 @@ export default function EditableStepEdge({
               cursor: 'move',
               width: HANDLE_SIZE,
               height: HANDLE_SIZE,
-              background: '#2563eb', // Blue
+              background: edgeColor,
               borderRadius: '50%',
               border: '2px solid white',
               zIndex: 1001,
@@ -213,7 +221,7 @@ export default function EditableStepEdge({
               cursor: 'copy', // Indicates adding something
               width: MIDPOINT_HANDLE_SIZE,
               height: MIDPOINT_HANDLE_SIZE,
-              background: '#93c5fd', // Lighter blue
+              background: midpointColor,
               borderRadius: '50%',
               zIndex: 1000,
               opacity: 0.8,

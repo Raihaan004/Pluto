@@ -270,12 +270,24 @@ def get_dashboard_stats(clerk_id: str):
             collaborators = project.get("collaborators", [])
             is_collaborator = any(c.get("clerk_id") == clerk_id for c in collaborators)
             
-            if is_owner or is_collaborator:
+            # Check if user is assigned to any node in this project
+            is_assigned_to_any_node = False
+            sheets = project.get("sheets", [])
+            for sheet in sheets:
+                nodes = sheet.get("nodes", [])
+                for node in nodes:
+                    data = node.get("data", {})
+                    if clerk_id in data.get("responsibility", []) or clerk_id in data.get("support", []):
+                        is_assigned_to_any_node = True
+                        break
+                if is_assigned_to_any_node:
+                    break
+
+            if is_owner or is_collaborator or is_assigned_to_any_node:
                 # Calculate automatic progress (Green Bar)
                 # Based on nodes assigned to the user where state != 'Draft'
                 assigned_nodes = 0
                 changed_nodes = 0
-                sheets = project.get("sheets", [])
                 for sheet in sheets:
                     nodes = sheet.get("nodes", [])
                     for node in nodes:
@@ -283,12 +295,28 @@ def get_dashboard_stats(clerk_id: str):
                         responsibility = data.get("responsibility", [])
                         support = data.get("support", [])
                         
-                        if clerk_id in responsibility or clerk_id in support:
+                        is_assigned = clerk_id in responsibility or clerk_id in support
+                        if is_assigned:
                             assigned_nodes += 1
                             # Check if state has changed from 'Draft' or 'None'
                             node_state = data.get("state") or data.get("status") or "None"
                             if node_state not in ["Draft", "None"]:
                                 changed_nodes += 1
+                            
+                            # Check Tasks Assigned
+                            project_id = project.get("id", "unknown")
+                            node_id = node.get("id", "unknown")
+                            assigned_task_ids.add(f"{project_id}_{node_id}")
+
+                            # Check for upcoming deadlines ONLY for assigned tasks
+                            deadline_str = data.get("deadline")
+                            if deadline_str:
+                                try:
+                                    deadline = datetime.fromisoformat(deadline_str.replace('Z', '+00:00'))
+                                    if now <= deadline <= next_week:
+                                        upcoming_deadlines += 1
+                                except:
+                                    continue
                 
                 manual_progress = project.get("progress", 0)
                 if assigned_nodes > 0:
@@ -305,35 +333,6 @@ def get_dashboard_stats(clerk_id: str):
                     "auto_progress": round(auto_progress), # Automatic (Green Bar)
                     "updated_at": project["updated_at"]
                 })
-
-                # Check Tasks Assigned
-                # Iterate through sheets and nodes to find assignments
-                sheets = project.get("sheets", [])
-                for sheet in sheets:
-                    nodes = sheet.get("nodes", [])
-                    for node in nodes:
-                        data = node.get("data", {})
-                        
-                        # Check responsibility
-                        responsibility = data.get("responsibility", [])
-                        # Check support
-                        support = data.get("support", [])
-                        
-                        # If user is in responsibility or support list
-                        if clerk_id in responsibility or clerk_id in support:
-                            project_id = project.get("id", "unknown")
-                            node_id = node.get("id", "unknown")
-                            assigned_task_ids.add(f"{project_id}_{node_id}")
-
-                        # Check for upcoming deadlines
-                        deadline_str = data.get("deadline")
-                        if deadline_str:
-                            try:
-                                deadline = datetime.fromisoformat(deadline_str.replace('Z', '+00:00'))
-                                if now <= deadline <= next_week:
-                                    upcoming_deadlines += 1
-                            except:
-                                continue
 
         tasks_assigned = len(assigned_task_ids)
         
@@ -375,8 +374,19 @@ def create_process(process: ProcessPackageCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/processes/{process_id}")
-def update_process(process_id: int, process: ProcessPackageCreate):
+def update_process(process_id: int, process: ProcessPackageCreate, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     try:
+        # Check ownership if requester_id is provided
+        if requester_id:
+             p_res = supabase.table("processes").select("user_id").eq("id", process_id).execute()
+             if p_res.data:
+                 owner_id = p_res.data[0]["user_id"]
+                 if owner_id != requester_id:
+                     # Check if admin
+                     user = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
+                     if not user.data or user.data[0]["role"] != "admin":
+                         raise HTTPException(status_code=403, detail="Not authorized to update this process")
+
         data = {
             "name": process.name,
             "sheets": [sheet.model_dump() for sheet in process.sheets],
@@ -385,6 +395,8 @@ def update_process(process_id: int, process: ProcessPackageCreate):
         }
         response = supabase.table("processes").update(data).eq("id", process_id).execute()
         return {"status": "updated", "data": response.data}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -421,17 +433,41 @@ def get_process(process_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/processes/{process_id}/rename")
-def rename_process(process_id: int, rename: ProcessRename):
+def rename_process(process_id: int, rename: ProcessRename, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     try:
+        # Check ownership if requester_id is provided
+        if requester_id:
+             process = supabase.table("processes").select("user_id").eq("id", process_id).execute()
+             if process.data:
+                 owner_id = process.data[0]["user_id"]
+                 if owner_id != requester_id:
+                     # Check if admin
+                     user = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
+                     if not user.data or user.data[0]["role"] != "admin":
+                         raise HTTPException(status_code=403, detail="Not authorized to rename this process")
+
         data = supabase.table("processes").update({"name": rename.name}).eq("id", process_id).execute()
         return {"status": "updated", "data": data.data}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/processes/{process_id}/versions")
-def save_process_version(process_id: int, version: ProcessVersionCreate):
+def save_process_version(process_id: int, version: ProcessVersionCreate, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     try:
+        # Check ownership if requester_id is provided
+        if requester_id:
+             p_res = supabase.table("processes").select("user_id").eq("id", process_id).execute()
+             if p_res.data:
+                 owner_id = p_res.data[0]["user_id"]
+                 if owner_id != requester_id:
+                     # Check if admin
+                     user = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
+                     if not user.data or user.data[0]["role"] != "admin":
+                         raise HTTPException(status_code=403, detail="Not authorized to save version for this process")
+
         # 1. Get current versions
         current = supabase.table("processes").select("versions").eq("id", process_id).execute()
         if not current.data:
@@ -450,16 +486,32 @@ def save_process_version(process_id: int, version: ProcessVersionCreate):
         # 3. Update
         data = supabase.table("processes").update({"versions": versions}).eq("id", process_id).execute()
         return {"status": "version_saved", "data": data.data}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f"Error saving version: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/processes/{process_id}")
-def delete_process(process_id: int):
+def delete_process(process_id: int, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     try:
+        # Check ownership if requester_id is provided
+        if requester_id:
+             process = supabase.table("processes").select("user_id").eq("id", process_id).execute()
+             if process.data:
+                 owner_id = process.data[0]["user_id"]
+                 if owner_id != requester_id:
+                     # Check if admin
+                     user = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
+                     if not user.data or user.data[0]["role"] != "admin":
+                         raise HTTPException(status_code=403, detail="Not authorized to delete this process")
+
         response = supabase.table("processes").delete().eq("id", process_id).execute()
         return {"status": "deleted", "data": response.data}
+    except HTTPException as he:
+        raise he
     except Exception as e:
+        print(f"Error deleting process: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/projects")
@@ -600,6 +652,10 @@ def clear_task(
         # Update the node data
         data["responsibility"] = updated_responsibility
         data["support"] = updated_support
+        
+        # Remove deadline when task is marked as completed
+        data["deadline"] = None
+        
         node["data"] = data
         
         # Update the nodes array
@@ -728,6 +784,9 @@ def update_project(project_id: int, update: ProjectUpdate):
         if update.version_name is not None:
             data["version_name"] = update.version_name
             
+        if update.status is not None:
+            data["status"] = update.status
+            
         response = supabase.table("projects").update(data).eq("id", project_id).execute()
         return {"status": "updated", "data": response.data}
     except Exception as e:
@@ -775,15 +834,22 @@ def get_calendar_events(user_id: str):
                 if not sheet.get('nodes'):
                     continue
                 for node in sheet['nodes']:
-                    if node.get('data', {}).get('deadline'):
-                        events.append({
-                            "id": f"{project['id']}-{node['id']}",
-                            "title": node['data'].get('label', 'Untitled Task'),
-                            "project_name": project['name'],
-                            "date": node['data']['deadline'],
-                            "type": "task", # All deadlines are considered tasks for now
-                            "route": f"/dashboard/process/create?projectId={project['id']}"
-                        })
+                    node_data = node.get('data', {})
+                    
+                    # Check if user is assigned to this specific task
+                    responsibility = node_data.get("responsibility", [])
+                    support = node_data.get("support", [])
+                    
+                    if user_id in responsibility or user_id in support:
+                        if node_data.get('deadline'):
+                            events.append({
+                                "id": f"{project['id']}-{node['id']}",
+                                "title": node_data.get('label', 'Untitled Task'),
+                                "project_name": project['name'],
+                                "date": node_data['deadline'],
+                                "type": "task", # All deadlines are considered tasks for now
+                                "route": f"/dashboard/process/create?projectId={project['id']}"
+                            })
         return events
     except Exception as e:
         print(f"Error fetching calendar events: {e}")

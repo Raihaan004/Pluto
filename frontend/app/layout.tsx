@@ -1,5 +1,6 @@
 import { ClerkProvider } from '@clerk/nextjs'
 import { UserRoleProvider } from '@/context/UserRoleContext';
+import { HelpBot } from '@/components/HelpBot';
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -32,6 +33,7 @@ export default function RootLayout({
         >
           <UserRoleProvider>
             {children}
+            <HelpBot />
           </UserRoleProvider>
         </body>
       </html>

@@ -46,7 +46,10 @@ export default function ProcessPage() {
         false
       )
       
-      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/processes/${id}/rename`, { name: newName })
+      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/processes/${id}/rename`, 
+        { name: newName },
+        { headers: { "X-Clerk-User-Id": user?.id } }
+      )
       setEditingId(null)
       setNewName("")
       mutate() // Revalidate
@@ -66,7 +69,9 @@ export default function ProcessPage() {
         false
       )
       
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/processes/${id}`)
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/processes/${id}`, {
+        headers: { "X-Clerk-User-Id": user?.id }
+      })
       mutate() // Revalidate
     } catch (error) {
       console.error("Failed to delete process:", error)
@@ -87,7 +92,7 @@ export default function ProcessPage() {
 
   const ProcessCard = ({ process, isDraft }: { process: Process; isDraft: boolean }) => (
     <div className="group relative bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden flex flex-col">
-      <div className="p-5 flex flex-col gap-4 flex-grow">
+      <div className="p-5 flex flex-col gap-4 grow">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className="p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors">
@@ -188,7 +193,7 @@ export default function ProcessPage() {
         {/* Left Column: Published Processes & Create New */}
         <div className="lg:col-span-2 space-y-8">
           {role !== 'viewer' && (
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-white shadow-lg relative overflow-hidden group">
+            <div className="bg-linear-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-white shadow-lg relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-16 -mt-16 blur-3xl group-hover:bg-white/20 transition-colors"></div>
               <div className="relative z-10">
                 <h2 className="text-2xl font-bold mb-2">Create New Process</h2>

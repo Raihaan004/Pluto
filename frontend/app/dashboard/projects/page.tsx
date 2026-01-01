@@ -44,6 +44,7 @@ interface Project {
   updated_at: string
   collaborators: Collaborator[]
   user_id: string // Owner ID
+  status?: string
 }
 
 interface Process {
@@ -192,7 +193,7 @@ export default function ProjectsPage() {
               <Plus className="w-4 h-4 mr-2" /> Create New Project
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogContent className="sm:max-w-106.25">
             <DialogHeader>
               <DialogTitle>Create New Project</DialogTitle>
               <DialogDescription>
@@ -221,11 +222,13 @@ export default function ProjectsPage() {
                     <SelectValue placeholder="Select a process" />
                   </SelectTrigger>
                   <SelectContent>
-                    {processes.map((process) => (
-                      <SelectItem key={process.id} value={process.id.toString()}>
-                        {process.name}
-                      </SelectItem>
-                    ))}
+                    {processes
+                      .filter(p => (p as any).status === 'published')
+                      .map((process) => (
+                        <SelectItem key={process.id} value={process.id.toString()}>
+                          {process.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -261,7 +264,7 @@ export default function ProjectsPage() {
         </Dialog>
       </div>
 
-      <div className="bg-white rounded-xl border shadow-sm p-6 min-h-[200px]">
+      <div className="bg-white rounded-xl border shadow-sm p-6 min-h-50">
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                {[1, 2, 3].map(i => (
@@ -290,16 +293,28 @@ export default function ProjectsPage() {
                     className="group relative bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden cursor-pointer flex flex-col"
                     onClick={() => router.push(`/dashboard/projects/editor?projectId=${project.id}`)}
                   >
-                    <div className="p-5 flex flex-col gap-4 flex-grow">
+                    <div className="p-5 flex flex-col gap-4 grow">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3 flex-1 min-w-0">
                           <div className="p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors">
                             <Folder className="h-5 w-5 text-blue-600" />
                           </div>
                           <div>
-                            <h3 className="font-semibold text-gray-900 truncate text-lg group-hover:text-blue-600 transition-colors" title={project.name}>
-                              {project.name}
-                            </h3>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-gray-900 truncate text-lg group-hover:text-blue-600 transition-colors" title={project.name}>
+                                {project.name}
+                              </h3>
+                              {project.status === 'draft' && (
+                                <span className="px-2 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 rounded-full border border-orange-200 uppercase tracking-wider">
+                                  Draft
+                                </span>
+                              )}
+                              {project.status === 'published' && (
+                                <span className="px-2 py-0.5 text-[10px] font-bold bg-green-100 text-green-700 rounded-full border border-green-200 uppercase tracking-wider">
+                                  Published
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-gray-500 truncate mt-0.5">
                               Based on: <span className="font-medium text-gray-700">{processes.find(p => p.id === project.process_id)?.name} ({project.version_name})</span>
                             </p>
@@ -355,7 +370,7 @@ export default function ProjectsPage() {
       </div>
 
       <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-106.25">
           <DialogHeader>
             <DialogTitle>Rename Project</DialogTitle>
             <DialogDescription>

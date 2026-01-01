@@ -56,8 +56,8 @@ export default function ProjectProgressGraph({ projects, userId }: ProjectProgre
     };
 
     return (
-        <Card className="border-none shadow-lg bg-white overflow-hidden rounded-2xl h-full">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <Card className="border-none shadow-lg bg-white overflow-hidden rounded-2xl h-full flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 shrink-0">
                 <CardTitle className="text-xl font-bold text-slate-800">Activity Overview</CardTitle>
                 <Popover>
                     <PopoverTrigger asChild>
@@ -131,8 +131,8 @@ export default function ProjectProgressGraph({ projects, userId }: ProjectProgre
                     </PopoverContent>
                 </Popover>
             </CardHeader>
-            <CardContent className="p-6">
-                <div className="h-[300px] w-full relative mt-4">
+            <CardContent className="p-6 flex-1 min-h-0">
+                <div className="h-full w-full relative">
                     {projects?.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full text-slate-400">
                             <p>No projects found</p>
@@ -161,8 +161,8 @@ export default function ProjectProgressGraph({ projects, userId }: ProjectProgre
                                     </div>
 
                                     {projects?.slice(0, 5).map((project) => (
-                                        <div key={project.id} className="flex flex-col items-center gap-2 group relative">
-                                            <div className="flex items-end gap-1 h-[240px]">
+                                        <div key={project.id} className="flex flex-col items-center gap-2 group relative h-full">
+                                            <div className="flex items-end gap-1 flex-1 w-full">
                                                 {/* Blue Bar (Manual) */}
                                                 <div 
                                                     className="w-6 bg-sky-400 rounded-t-sm transition-all duration-500 relative"
@@ -182,7 +182,7 @@ export default function ProjectProgressGraph({ projects, userId }: ProjectProgre
                                                     </div>
                                                 </div>
                                             </div>
-                                            <span className="text-[10px] text-slate-500 font-medium truncate max-w-[80px] text-center">
+                                            <span className="text-[10px] text-slate-500 font-medium truncate max-w-20 text-center">
                                                 {project.name} <span className="text-slate-400 text-[9px]">({project.version_name})</span>
                                             </span>
                                         </div>

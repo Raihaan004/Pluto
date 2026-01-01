@@ -89,8 +89,8 @@ export function DashboardNotifications() {
           <Link href="/dashboard/notifications">View All</Link>
         </Button>
       </CardHeader>
-      <CardContent className="p-0 flex-1 overflow-hidden">
-        <ScrollArea className="h-[400px] w-full">
+      <CardContent className="p-0 flex-1 min-h-0 overflow-hidden">
+        <ScrollArea className="h-full w-full">
           <div className="flex flex-col divide-y divide-gray-100">
             {notifications.length > 0 ? (
               notifications.slice(0, 5).map((notification: Notification) => (

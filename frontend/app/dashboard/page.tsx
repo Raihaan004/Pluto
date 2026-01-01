@@ -56,32 +56,34 @@ export default async function DashboardPage() {
   ];
 
   return (
-    <div className="p-8 space-y-8 max-w-7xl mx-auto">
+    <div className="p-6 h-full flex flex-col gap-6 max-w-7xl mx-auto overflow-hidden">
       <UserSync />
       
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-gray-100 shrink-0">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Dashboard</h1>
-          <p className="text-gray-500 mt-1 text-lg">Welcome back! Here's an overview of your projects.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Dashboard</h1>
+          <p className="text-gray-500 mt-0.5 text-base">Welcome back! Here's an overview of your projects.</p>
         </div>
         <CreateProjectButton />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
         {/* Stats Grid */}
-        <div className="lg:col-span-2 space-y-8">
-            <BentoGrid className="grid-rows-[auto]">
+        <div className="lg:col-span-2 flex flex-col gap-6 min-h-0">
+            <BentoGrid className="lg:grid-cols-2 auto-rows-[12rem] shrink-0">
             {stats.map((stat) => (
                 <BentoCard key={stat.name} {...stat} />
             ))}
             </BentoGrid>
 
             {/* Activity Overview Graph */}
-            <ProjectProgressGraph projects={data.projects} userId={userId || ""} />
+            <div className="flex-1 min-h-0">
+              <ProjectProgressGraph projects={data.projects} userId={userId || ""} />
+            </div>
         </div>
 
         {/* Notifications Panel */}
-        <div className="lg:col-span-1 h-full">
+        <div className="lg:col-span-1 h-full min-h-0">
             <DashboardNotifications />
         </div>
       </div>

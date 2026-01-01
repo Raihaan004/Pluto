@@ -87,7 +87,7 @@ export function ShareProjectDialog({ projectId, users, currentCollaborators = []
           Add Members
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-125">
         <DialogHeader>
           <DialogTitle>Share Project</DialogTitle>
           <DialogDescription>
@@ -98,7 +98,7 @@ export function ShareProjectDialog({ projectId, users, currentCollaborators = []
           {/* Current Members Section */}
           <div className="space-y-3">
             <Label className="text-base font-semibold">Current Members</Label>
-            <div className="border rounded-md p-3 space-y-2 max-h-[200px] overflow-y-auto">
+            <div className="border rounded-md p-3 space-y-2 max-h-50 overflow-y-auto">
               {/* Owner */}
               {projectOwnerId && (() => {
                 const owner = users.find(u => u.clerk_id === projectOwnerId)

@@ -15,6 +15,7 @@ interface PropertiesPanelProps {
   onSave: (nodeId: string, data: any) => void;
   onClose: () => void;
   projectId?: string | null;
+  projectOwnerId?: string | null;
 }
 
 interface User {
@@ -25,7 +26,7 @@ interface User {
   role: string;
 }
 
-export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: PropertiesPanelProps) => {
+export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, projectOwnerId }: PropertiesPanelProps) => {
   const { user } = useUser();
   const [formData, setFormData] = useState<any>({
     label: '',
@@ -50,6 +51,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
     deadline: undefined as Date | undefined,
   });
 
+  const [initialFormData, setInitialFormData] = useState<any>(null);
   const [showRolesManager, setShowRolesManager] = useState(false);
   const [newRoleName, setNewRoleName] = useState('');
   const [availableUsers, setAvailableUsers] = useState<User[]>([]);
@@ -108,7 +110,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
 
   useEffect(() => {
     if (selectedNode) {
-      setFormData({
+      const data = {
         label: selectedNode.data.label || '',
         state: selectedNode.data.state || 'None',
         backgroundColor: selectedNode.data.backgroundColor || '',
@@ -129,7 +131,9 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
         verificationComments: selectedNode.data.verificationComments || '',
         authorComments: selectedNode.data.authorComments || '',
         deadline: selectedNode.data.deadline ? new Date(selectedNode.data.deadline) : undefined
-      });
+      };
+      setFormData(data);
+      setInitialFormData(data);
     }
   }, [selectedNode]);
 
@@ -145,81 +149,15 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
     }));
   };
 
-  const handleUserSelection = async (field: string, userId: string) => {
+  const handleUserSelection = (field: string, userId: string) => {
       if (!userId) return;
       
-      const selectedUser = availableUsers.find(u => u.clerk_id === userId);
-      if (!selectedUser) return;
-
-      const addAsCollaborator = async () => {
-          try {
-            // Add user as collaborator with editor role so they can see and edit the project
-            await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/projects/${projectId}/collaborators`, {
-              user_id: userId,
-              role: 'editor'
-            });
-          } catch (error) {
-            console.error('Error adding collaborator:', error);
-            // Don't fail the whole operation if collaborator add fails
-          }
-      };
-
-      const sendNotification = async (roleType: string) => {
-          try {
-            // Fetch project details to include in email
-            let projectName = 'Untitled Project';
-            let projectVersion = null;
-            
-            if (projectId) {
-              try {
-                const projectRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/project/${projectId}`);
-                if (projectRes.data) {
-                  projectName = projectRes.data.name || 'Untitled Project';
-                  projectVersion = projectRes.data.version_name || null;
-                }
-              } catch (error) {
-                console.error('Error fetching project details:', error);
-              }
-            }
-            
-            await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/notifications`, {
-              user_id: userId,
-              type: 'info',
-              title: `New ${roleType} Assignment`,
-              message: `In project "${projectName}" in node "${formData.label || 'Untitled'}" you have been assigned as ${roleType} by ${user?.fullName || user?.primaryEmailAddress?.emailAddress}.`,
-              read: false,
-              metadata: {
-                  project_id: projectId,
-                  role: 'editor',
-                  node_id: selectedNode.id,
-                  node_label: formData.label || 'Untitled',
-                  project_name: projectName,
-                  project_version: projectVersion,
-                  node_status: formData.state || 'Draft',
-                  deadline: formData.deadline || null,
-                  description: formData.description || null,
-                  assigned_by_id: user?.id || null,
-                  assigned_by_name: user?.fullName || user?.primaryEmailAddress?.emailAddress || 'System',
-                  assigned_by_email: user?.primaryEmailAddress?.emailAddress || ''
-              }
-            });
-          } catch (error) {
-            console.error('Error sending notification:', error);
-          }
-      };
-
       // For responsibility, we only want ONE user, not an array
       if (field === 'responsibility') {
           setFormData((prev: any) => ({
               ...prev,
               [field]: [userId] // Store ID, not name, for easier permission checks
           }));
-          if (projectId) {
-              // Add as collaborator first, then send notification
-              await addAsCollaborator();
-              await sendNotification('Responsible');
-              alert(`User ${selectedUser.first_name || selectedUser.email} added as collaborator and assigned as Responsible`);
-          }
       } else {
           // Store ID for support as well to enable full user details in NodeInfoDialog
           if (!formData[field].includes(userId)) {
@@ -227,12 +165,6 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
                   ...prev,
                   [field]: [...(prev[field] || []), userId]
               }));
-              if (projectId) {
-                  // Add as collaborator first, then send notification
-                  await addAsCollaborator();
-                  await sendNotification('Support');
-                  alert(`User ${selectedUser.first_name || selectedUser.email} added as collaborator and assigned as Support`);
-              }
           }
       }
   };
@@ -280,37 +212,129 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
 
   const handleStateChange = (newState: string) => {
     // We need to check permissions here.
-    // Since we don't have the full role context, let's fetch the current user's role from the availableUsers list if possible
-    // (assuming the current user is in the list)
     const currentUser = availableUsers.find(u => u.clerk_id === user?.id);
     const isAdmin = currentUser?.role === 'admin';
+    const isOwner = projectOwnerId === user?.id;
     
     const responsibleId = formData.responsibility?.[0];
     const isResponsible = responsibleId === user?.id;
 
-    if (isAdmin || isResponsible || !responsibleId) {
+    if (isAdmin || isOwner || isResponsible || !responsibleId) {
         handleChange('state', newState);
-    } else {
-        alert("You do not have permission to change the state of this node.");
     }
   };
 
   const handleCommentChange = (field: string, value: string) => {
     const currentUser = availableUsers.find(u => u.clerk_id === user?.id);
     const isAdmin = currentUser?.role === 'admin';
+    const isOwner = projectOwnerId === user?.id;
     
     const responsibleId = formData.responsibility?.[0];
     const isResponsible = responsibleId === user?.id;
+    const isSupport = formData.support?.includes(user?.id);
 
-    if (isAdmin || isResponsible || !responsibleId) {
-        handleChange(field, value);
+    if (field === 'authorComments') {
+        if (isAdmin || isOwner) {
+            handleChange(field, value);
+        }
+    } else if (field === 'verificationComments') {
+        if (isAdmin || isResponsible || isSupport) {
+            handleChange(field, value);
+        }
     } else {
-        alert("You do not have permission to add comments to this node.");
+        handleChange(field, value);
     }
   };
 
-  const handleSave = () => {
+  const canEditAuthorComments = () => {
+    const currentUser = availableUsers.find(u => u.clerk_id === user?.id);
+    const isAdmin = currentUser?.role === 'admin';
+    const isOwner = projectOwnerId === user?.id;
+    return isAdmin || isOwner;
+  };
+
+  const canEditVerificationComments = () => {
+    const currentUser = availableUsers.find(u => u.clerk_id === user?.id);
+    const isAdmin = currentUser?.role === 'admin';
+    const isResponsible = formData.responsibility?.[0] === user?.id;
+    const isSupport = formData.support?.includes(user?.id);
+    return isAdmin || isResponsible || isSupport;
+  };
+
+  const handleSave = async () => {
+    // 1. Identify new assignments
+    const oldResponsibility = initialFormData?.responsibility || [];
+    const newResponsibility = formData.responsibility || [];
+    const newlyAssignedResponsible = newResponsibility.filter((id: string) => !oldResponsibility.includes(id));
+
+    const oldSupport = initialFormData?.support || [];
+    const newSupport = formData.support || [];
+    const newlyAssignedSupport = newSupport.filter((id: string) => !oldSupport.includes(id));
+
+    // 2. Process new assignments (Add as collaborator + Send notification)
+    const processAssignments = async (userIds: string[], roleType: string) => {
+      for (const userId of userIds) {
+        try {
+          // Add as collaborator
+          if (projectId) {
+            await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/projects/${projectId}/collaborators`, {
+              user_id: userId,
+              role: 'editor'
+            });
+          }
+
+          // Send notification
+          let projectName = 'Untitled Project';
+          let projectVersion = null;
+          if (projectId) {
+            try {
+              const projectRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/project/${projectId}`);
+              if (projectRes.data) {
+                projectName = projectRes.data.name || 'Untitled Project';
+                projectVersion = projectRes.data.version_name || null;
+              }
+            } catch (error) {
+              console.error('Error fetching project details for notification:', error);
+            }
+          }
+
+          await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/notifications`, {
+            user_id: userId,
+            type: 'info',
+            title: `New ${roleType} Assignment`,
+            message: `In project "${projectName}" in node "${formData.label || 'Untitled'}" you have been assigned as ${roleType} by ${user?.fullName || user?.primaryEmailAddress?.emailAddress}.`,
+            read: false,
+            metadata: {
+                project_id: projectId,
+                role: 'editor',
+                node_id: selectedNode.id,
+                node_label: formData.label || 'Untitled',
+                project_name: projectName,
+                project_version: projectVersion,
+                node_status: formData.state || 'Draft',
+                deadline: formData.deadline || null,
+                description: formData.description || null,
+                assigned_by_id: user?.id || null,
+                assigned_by_name: user?.fullName || user?.primaryEmailAddress?.emailAddress || 'System',
+                assigned_by_email: user?.primaryEmailAddress?.emailAddress || ''
+            }
+          });
+        } catch (error) {
+          console.error(`Error processing assignment for ${userId}:`, error);
+        }
+      }
+    };
+
+    if (projectId) {
+      await processAssignments(newlyAssignedResponsible, 'Responsible');
+      await processAssignments(newlyAssignedSupport, 'Support');
+    }
+
+    // 3. Save the node data
     onSave(selectedNode.id, formData);
+    
+    // Update initial form data to current state after save
+    setInitialFormData(formData);
   };
 
   if (!selectedNode) return null;
@@ -342,7 +366,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
           <textarea
             value={formData.description}
             onChange={(e) => handleChange('description', e.target.value)}
-            className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[80px]"
+            className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-20"
             placeholder="Enter work product description"
           />
         </div>
@@ -354,7 +378,11 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
           <select
             value={formData.state}
             onChange={(e) => handleStateChange(e.target.value)}
-            className="w-full p-2 border rounded-md text-sm outline-none"
+            disabled={!canEditVerificationComments() && projectOwnerId !== user?.id}
+            className={cn(
+              "w-full p-2 border rounded-md text-sm outline-none",
+              (!canEditVerificationComments() && projectOwnerId !== user?.id) && "bg-gray-50 cursor-not-allowed"
+            )}
           >
             <option value="None">None</option>
             <option value="Draft">Draft</option>
@@ -374,8 +402,12 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
               <textarea
                 value={formData.verificationComments}
                 onChange={(e) => handleCommentChange('verificationComments', e.target.value)}
-                className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[60px]"
-                placeholder="Add verification comments..."
+                readOnly={!canEditVerificationComments()}
+                className={cn(
+                  "w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-15",
+                  !canEditVerificationComments() && "bg-gray-50 cursor-not-allowed"
+                )}
+                placeholder={canEditVerificationComments() ? "Add verification comments..." : "Only responsible/support can edit"}
               />
             </div>
 
@@ -384,8 +416,12 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId }: Pr
               <textarea
                 value={formData.authorComments}
                 onChange={(e) => handleCommentChange('authorComments', e.target.value)}
-                className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[60px]"
-                placeholder="Add author comments..."
+                readOnly={!canEditAuthorComments()}
+                className={cn(
+                  "w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-15",
+                  !canEditAuthorComments() && "bg-gray-50 cursor-not-allowed"
+                )}
+                placeholder={canEditAuthorComments() ? "Add author comments..." : "Only project author can edit"}
               />
             </div>
           </div>

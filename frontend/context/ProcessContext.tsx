@@ -1,16 +1,37 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useMemo } from 'react';
 import { Node } from 'reactflow';
 
 interface ProcessContextType {
   openNodeDialog: (nodeData: any) => void;
   setNodes?: React.Dispatch<React.SetStateAction<Node[]>>;
+  edgeStyle: 'blue-solid' | 'red-dashed';
+  setEdgeStyle: (style: 'blue-solid' | 'red-dashed') => void;
 }
 
 const ProcessContext = createContext<ProcessContextType | undefined>(undefined);
 
-export const ProcessProvider = ({ children, openNodeDialog, setNodes }: { children: ReactNode, openNodeDialog: (data: any) => void, setNodes?: React.Dispatch<React.SetStateAction<Node[]>> }) => {
+export const ProcessProvider = ({ 
+  children, 
+  openNodeDialog, 
+  setNodes,
+  edgeStyle,
+  setEdgeStyle
+}: { 
+  children: ReactNode, 
+  openNodeDialog: (data: any) => void, 
+  setNodes?: React.Dispatch<React.SetStateAction<Node[]>>,
+  edgeStyle: 'blue-solid' | 'red-dashed',
+  setEdgeStyle: (style: 'blue-solid' | 'red-dashed') => void
+}) => {
+  const value = useMemo(() => ({
+    openNodeDialog,
+    setNodes,
+    edgeStyle,
+    setEdgeStyle
+  }), [openNodeDialog, setNodes, edgeStyle, setEdgeStyle]);
+
   return (
-    <ProcessContext.Provider value={{ openNodeDialog, setNodes }}>
+    <ProcessContext.Provider value={value}>
       {children}
     </ProcessContext.Provider>
   );

@@ -60,6 +60,7 @@ class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     progress: Optional[int] = None
     version_name: Optional[str] = None
+    status: Optional[str] = None
 
 class CollaboratorAdd(BaseModel):
     user_id: str

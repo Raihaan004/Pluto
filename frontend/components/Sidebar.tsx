@@ -56,14 +56,14 @@ export function Sidebar() {
         <div className={cn("flex items-center h-12", isCollapsed ? "justify-center" : "justify-between px-2")}>
           {!isCollapsed && (
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-md">
+              <div className="w-8 h-8 bg-linear-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-md">
                 P
               </div>
               <span className="font-bold text-xl tracking-tight text-gray-900 dark:text-white">Pluto</span>
             </div>
           )}
           {isCollapsed && (
-             <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-md">
+             <div className="w-8 h-8 bg-linear-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-md">
                 P
              </div>
           )}

@@ -95,12 +95,12 @@ export function CreateProjectButton() {
   return (
     <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg rounded-xl px-6 h-12 text-base font-medium transition-all hover:scale-105">
+        <Button className="bg-linear-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg rounded-xl px-6 h-12 text-base font-medium transition-all hover:scale-105">
           <Plus className="w-4 h-4 mr-2" />
           New Project
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-106.25">
         <DialogHeader>
           <DialogTitle>Create New Project</DialogTitle>
           <DialogDescription>
@@ -130,11 +130,13 @@ export function CreateProjectButton() {
               </SelectTrigger>
               <SelectContent>
                 {processes.length > 0 ? (
-                  processes.map((process) => (
-                    <SelectItem key={process.id} value={process.id.toString()}>
-                      {process.name}
-                    </SelectItem>
-                  ))
+                  processes
+                    .filter(p => (p as any).status === 'published')
+                    .map((process) => (
+                      <SelectItem key={process.id} value={process.id.toString()}>
+                        {process.name}
+                      </SelectItem>
+                    ))
                 ) : (
                   <SelectItem value="none" disabled>No processes available</SelectItem>
                 )}

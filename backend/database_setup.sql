@@ -99,6 +99,11 @@ create policy "Enable update access for all users"
 on public.processes for update
 using ( true );
 
+drop policy if exists "Enable delete access for all users" on public.processes;
+create policy "Enable delete access for all users"
+on public.processes for delete
+using ( true );
+
 
 -- 4. Projects Table
 create table if not exists public.projects (
@@ -109,6 +114,7 @@ create table if not exists public.projects (
   version_name text, -- Reference to the version used
   sheets jsonb not null default '[]'::jsonb,
   collaborators jsonb not null default '[]'::jsonb,
+  status text default 'draft',
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );

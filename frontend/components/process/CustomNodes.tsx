@@ -1,10 +1,22 @@
 import React, { memo, useState } from 'react';
 import { Handle, Position, NodeResizer } from 'reactflow';
-import { Link as LinkIcon, FileText, Users, CheckSquare, BookOpen, Paperclip, AlignLeft, MessageSquare, Edit2 } from 'lucide-react';
+import { Link as LinkIcon, FileText, Users, CheckSquare, BookOpen, Paperclip, AlignLeft, MessageSquare, Edit2, RotateCw } from 'lucide-react';
 import { useProcessContext } from '@/context/ProcessContext';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+
+const getFontSize = (width?: number, height?: number) => {
+  if (!width || !height) return undefined;
+  const size = Math.min(width / 7, height / 3);
+  return `${Math.max(12, Math.min(size, 28))}px`;
+};
+
+const getHeaderFontSize = (width?: number) => {
+  if (!width) return undefined;
+  const size = width / 15;
+  return `${Math.max(14, Math.min(size, 32))}px`;
+};
 
 const MultiHandles = ({ colorClass }: { colorClass: string }) => {
   const baseClasses = `w-2 h-2 ${colorClass} opacity-0 group-hover:opacity-100 transition-opacity`;
@@ -96,7 +108,8 @@ const StatusIndicator = ({ data }: { data: any }) => {
   );
 };
 
-const WorkProductNode = ({ data, selected }: any) => {
+const WorkProductNode = ({ data, selected, width, height }: any) => {
+  const fontSize = getFontSize(width, height);
   return (
     <>
       <NodeResizer color="#2563eb" isVisible={selected} minWidth={100} minHeight={50} />
@@ -111,8 +124,9 @@ const WorkProductNode = ({ data, selected }: any) => {
         <NodeIcons data={data} />
         <StatusIndicator data={data} />
         <div 
-          className="text-sm"
+          className={fontSize ? "" : "text-sm"}
           style={{
+            fontSize: fontSize,
             fontWeight: data.isBold ? 'bold' : 'normal',
             textAlign: data.alignment || 'center',
             whiteSpace: data.wrapText ? 'normal' : 'nowrap'
@@ -126,7 +140,8 @@ const WorkProductNode = ({ data, selected }: any) => {
   );
 };
 
-const ActivityNode = ({ data, selected }: any) => {
+const ActivityNode = ({ data, selected, width, height }: any) => {
+  const fontSize = getFontSize(width, height);
   return (
     <>
       <NodeResizer color="#ca8a04" isVisible={selected} minWidth={100} minHeight={50} />
@@ -141,8 +156,9 @@ const ActivityNode = ({ data, selected }: any) => {
         <NodeIcons data={data} />
         <StatusIndicator data={data} />
         <div 
-          className="text-sm"
+          className={fontSize ? "" : "text-sm"}
           style={{
+            fontSize: fontSize,
             fontWeight: data.isBold ? 'bold' : 'normal',
             textAlign: data.alignment || 'center',
             whiteSpace: data.wrapText ? 'normal' : 'nowrap'
@@ -156,7 +172,8 @@ const ActivityNode = ({ data, selected }: any) => {
   );
 };
 
-const DecisionNode = ({ data, selected }: any) => {
+const DecisionNode = ({ data, selected, width, height }: any) => {
+  const fontSize = getFontSize(width, height);
   return (
     <>
       <NodeResizer color="#ea580c" isVisible={selected} minWidth={100} minHeight={100} />
@@ -180,8 +197,9 @@ const DecisionNode = ({ data, selected }: any) => {
               <StatusIndicator data={data} />
            </div>
            <div 
-              className="text-sm px-6"
+              className={fontSize ? "px-6" : "text-sm px-6"}
               style={{
+                fontSize: fontSize,
                 color: data.textColor || '#7C2D12',
                 fontWeight: data.isBold ? 'bold' : 'normal',
                 textAlign: data.alignment || 'center',
@@ -204,7 +222,8 @@ const DecisionNode = ({ data, selected }: any) => {
   );
 };
 
-const ProcessNode = ({ data, selected }: any) => {
+const ProcessNode = ({ data, selected, width, height }: any) => {
+  const fontSize = getFontSize(width, height);
   return (
     <>
       <NodeResizer color="#16a34a" isVisible={selected} minWidth={100} minHeight={50} />
@@ -219,8 +238,9 @@ const ProcessNode = ({ data, selected }: any) => {
         <NodeIcons data={data} />
         <StatusIndicator data={data} />
         <div 
-          className="text-sm"
+          className={fontSize ? "" : "text-sm"}
           style={{
+            fontSize: fontSize,
             fontWeight: data.isBold ? 'bold' : 'normal',
             textAlign: data.alignment || 'center',
             whiteSpace: data.wrapText ? 'normal' : 'nowrap'
@@ -234,9 +254,8 @@ const ProcessNode = ({ data, selected }: any) => {
   );
 };
 
-const DocumentNode = ({ data, selected }: any) => {
-  // This is the start of the existing DocumentNode component definition
-  // ... (rest of the component is unchanged)
+const DocumentNode = ({ data, selected, width, height }: any) => {
+  const fontSize = getFontSize(width, height);
   return (
     <>
       <NodeResizer color="#0891b2" isVisible={selected} minWidth={100} minHeight={50} />
@@ -252,8 +271,9 @@ const DocumentNode = ({ data, selected }: any) => {
         <NodeIcons data={data} />
         <StatusIndicator data={data} />
         <div 
-          className="text-sm"
+          className={fontSize ? "" : "text-sm"}
           style={{
+            fontSize: fontSize,
             fontWeight: data.isBold ? 'bold' : 'normal',
             textAlign: data.alignment || 'center',
             whiteSpace: data.wrapText ? 'normal' : 'nowrap'
@@ -267,9 +287,11 @@ const DocumentNode = ({ data, selected }: any) => {
   );
 };
 
-const SwimLaneNode = ({ id, data, selected }: any) => {
+const SwimLaneNode = ({ id, data, selected, width, height }: any) => {
   const { setNodes } = useProcessContext();
   const [label, setLabel] = useState(data.label);
+  const isHorizontal = data.orientation === 'horizontal';
+  const fontSize = isHorizontal ? getHeaderFontSize(height) : getHeaderFontSize(width);
 
   const handleLabelChange = (newLabel: string) => {
     setLabel(newLabel);
@@ -285,35 +307,116 @@ const SwimLaneNode = ({ id, data, selected }: any) => {
     }
   };
 
+  const handleRotate = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (setNodes) {
+      setNodes((nds) =>
+        nds.map((node) => {
+          if (node.id === id) {
+            const newOrientation = node.data.orientation === 'horizontal' ? 'vertical' : 'horizontal';
+            // Swap width and height
+            const currentWidth = node.style?.width || 300;
+            const currentHeight = node.style?.height || 600;
+            return { 
+              ...node, 
+              data: { ...node.data, orientation: newOrientation },
+              style: { ...node.style, width: currentHeight, height: currentWidth }
+            };
+          }
+          return node;
+        })
+      );
+    }
+  };
+
   return (
     <>
-      <NodeResizer isVisible={selected} minWidth={200} minHeight={400} />
+      <NodeResizer isVisible={selected} minWidth={isHorizontal ? 400 : 200} minHeight={isHorizontal ? 200 : 400} />
       <div 
-        className="w-full h-full rounded-lg border-2 border-dashed bg-gray-100/50"
+        className={`w-full h-full rounded-lg border-2 border-dashed bg-gray-100/50 flex ${isHorizontal ? 'flex-row' : 'flex-col'}`}
         style={{ borderColor: data.color || '#cccccc', zIndex: -1 }}
       >
-        <Popover>
-          <PopoverTrigger asChild>
-            <div 
-              className="text-center font-bold p-2 bg-gray-200/50 rounded-t-lg cursor-pointer hover:bg-gray-300/50 transition-colors flex items-center justify-center gap-2"
-              style={{ color: data.textColor || '#555555' }}
+        <div className={`relative ${isHorizontal ? 'w-12 h-full border-r' : 'w-full h-10 border-b'} bg-gray-200/50 flex items-center justify-center group transition-all`}>
+          <Popover>
+            <PopoverTrigger asChild>
+              <div 
+                className={`font-bold cursor-pointer hover:text-blue-600 transition-colors flex items-center justify-center gap-2 ${isHorizontal ? '-rotate-90 whitespace-nowrap' : ''}`}
+                style={{ 
+                  color: data.textColor || '#555555',
+                  fontSize: fontSize,
+                  width: isHorizontal ? height : 'auto'
+                }}
+              >
+                {data.label}
+                <Edit2 className={`w-3 h-3 opacity-0 group-hover:opacity-100 ${isHorizontal ? 'rotate-90' : ''}`} />
+              </div>
+            </PopoverTrigger>
+            <PopoverContent className="w-64">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <h4 className="font-medium text-sm">Edit Lane Label</h4>
+                  <Input 
+                    value={label} 
+                    onChange={(e) => handleLabelChange(e.target.value)}
+                    placeholder="Enter lane name..."
+                    autoFocus
+                  />
+                </div>
+                <div className="pt-2 border-t">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full flex items-center gap-2"
+                    onClick={handleRotate}
+                  >
+                    <RotateCw className="w-4 h-4" />
+                    Rotate to {isHorizontal ? 'Vertical' : 'Horizontal'}
+                  </Button>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+          
+          {selected && (
+            <button 
+              onClick={handleRotate}
+              className={`absolute ${isHorizontal ? 'top-2 left-1/2 -translate-x-1/2' : 'right-2 top-1/2 -translate-y-1/2'} p-1.5 bg-white/80 hover:bg-white rounded-full shadow-sm border border-gray-200 transition-all z-20 flex items-center justify-center`}
+              title="Rotate Lane"
             >
-              {data.label}
-              <Edit2 className="w-3 h-3 opacity-0 group-hover:opacity-100" />
-            </div>
-          </PopoverTrigger>
-          <PopoverContent className="w-64">
-            <div className="space-y-2">
-              <h4 className="font-medium text-sm">Edit Lane Label</h4>
-              <Input 
-                value={label} 
-                onChange={(e) => handleLabelChange(e.target.value)}
-                placeholder="Enter lane name..."
-                autoFocus
-              />
-            </div>
-          </PopoverContent>
-        </Popover>
+              <RotateCw className="w-3.5 h-3.5 text-blue-600" />
+            </button>
+          )}
+        </div>
+        <div className="grow" />
+      </div>
+    </>
+  );
+};
+
+const TextBoxNode = ({ data, selected, width, height }: any) => {
+  const fontSize = getFontSize(width, height);
+  return (
+    <>
+      <NodeResizer color="#94a3b8" isVisible={selected} minWidth={50} minHeight={30} />
+      <div 
+        className="px-4 py-2 w-full h-full flex items-center justify-center relative group"
+        style={{ 
+          backgroundColor: data.backgroundColor || 'transparent', 
+          color: data.textColor || '#000000',
+          border: data.backgroundColor ? 'none' : '1px dashed #cbd5e1'
+        }}
+      >
+        <div 
+          className={fontSize ? "" : "text-sm"}
+          style={{
+            fontSize: fontSize,
+            fontWeight: data.isBold ? 'bold' : 'normal',
+            textAlign: data.alignment || 'center',
+            whiteSpace: data.wrapText ? 'normal' : 'nowrap'
+          }}
+        >
+          {data.label}
+        </div>
       </div>
     </>
   );
@@ -326,4 +429,5 @@ export const nodeTypes = {
   process: memo(ProcessNode),
   document: memo(DocumentNode),
   swimLane: memo(SwimLaneNode),
+  text: memo(TextBoxNode),
 };
