@@ -220,12 +220,13 @@ export default function LandingPage() {
              <div className="rounded-lg overflow-hidden border bg-gray-50 aspect-[16/9] flex items-center justify-center relative group">
                 <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/10 to-purple-500/10 z-0"></div>
                 {/* Placeholder for dashboard screenshot */}
-                <div className="z-10 text-center">
+                {/* <div className="z-10 text-center">
                     <div className="w-20 h-20 bg-white rounded-2xl shadow-lg mx-auto mb-4 flex items-center justify-center">
                         <Zap className="w-10 h-10 text-yellow-500" />
                     </div>
                     <p className="text-gray-500 font-medium">Interactive Dashboard Preview</p>
-                </div>
+                </div> */}
+                <img src={"/D-D.png"} alt="Dashboard Preview" className="w-full h-full object-cover z-10" />
              </div>
           </div>
         </section>

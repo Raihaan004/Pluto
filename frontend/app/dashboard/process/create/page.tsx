@@ -3,7 +3,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, FileSpreadsheet, Layout, Undo, Redo, Trash2, Edit2, Check, X, Users, ChevronRight, History } from 'lucide-react';
+import { Plus, FileSpreadsheet, Layout, Undo, Redo, Trash2, Edit2, Check, X, Users, ChevronRight, History, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useUser } from '@clerk/nextjs';
@@ -11,6 +11,8 @@ import axios from 'axios';
 import { useUserRole } from '@/context/UserRoleContext';
 import { ProcessProvider, useProcessContext } from '@/context/ProcessContext';
 import { useCustomNodeStates } from '@/hooks/useCustomNodeStates';
+import { jsPDF } from 'jspdf';
+import { toPng } from 'html-to-image';
 import {
   addEdge,
   useEdgesState,
@@ -22,6 +24,8 @@ import {
   OnNodesChange,
   OnEdgesChange,
   OnConnect,
+  getNodesBounds,
+  getViewportForBounds,
 } from 'reactflow';
 
 // Import ReactFlow normally (needed immediately for canvas)
@@ -1042,6 +1046,135 @@ export default function CreateProcessPage() {
     }
   }, [user?.id, projectId]);
 
+  const handleExportPDF = async () => {
+    if (!sheets.length) return;
+    
+    const originalActiveSheetId = activeSheetId;
+    const pdf = new jsPDF('l', 'mm', 'a4');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 10;
+
+    setIsSaving(true);
+
+    try {
+      // Sort sheets to have 'parent' first
+      const sortedSheets = [...sheets].sort((a, b) => {
+        if (a.id === 'parent') return -1;
+        if (b.id === 'parent') return 1;
+        return 0;
+      });
+
+      for (let i = 0; i < sortedSheets.length; i++) {
+        const sheet = sortedSheets[i];
+        
+        // Switch to sheet
+        handleSwitchSheet(sheet.id);
+        
+        // Wait for render and fit view
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        if (rfInstance) {
+          rfInstance.fitView({ padding: 0.2 });
+          // Wait a bit more for fitView to complete
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        const element = document.querySelector('.react-flow') as HTMLElement;
+        if (!element) continue;
+
+        // Hide UI elements for export
+        const controls = element.querySelector('.react-flow__controls') as HTMLElement;
+        const minimap = element.querySelector('.react-flow__minimap') as HTMLElement;
+        const attribution = element.querySelector('.react-flow__attribution') as HTMLElement;
+        
+        if (controls) controls.style.display = 'none';
+        if (minimap) minimap.style.display = 'none';
+        if (attribution) attribution.style.display = 'none';
+
+        const dataUrl = await toPng(element, {
+          backgroundColor: '#ffffff',
+          quality: 1,
+          pixelRatio: 2,
+        });
+
+        // Restore UI elements
+        if (controls) controls.style.display = 'flex';
+        if (minimap) minimap.style.display = 'block';
+        if (attribution) attribution.style.display = 'block';
+
+        if (i > 0) {
+          pdf.addPage();
+        }
+
+        // Add Metadata Header
+        pdf.setFillColor(245, 247, 250);
+        pdf.rect(0, 0, pageWidth, 35, 'F');
+        
+        pdf.setFontSize(10);
+        pdf.setTextColor(100, 116, 139);
+        pdf.setFont('helvetica', 'normal');
+        
+        // Date on top right
+        const exportDate = new Date().toLocaleDateString();
+        pdf.text(`Exported on: ${exportDate}`, pageWidth - margin - 40, margin);
+
+        // Project Name
+        pdf.setFontSize(16);
+        pdf.setTextColor(30, 41, 59);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(projectName || 'Untitled Project', margin, margin + 5);
+        
+        // Version and Sheet Info
+        pdf.setFontSize(11);
+        pdf.setTextColor(71, 85, 105);
+        pdf.setFont('helvetica', 'medium');
+        let subHeaderText = `Sheet: ${sheet.name}`;
+        if (versionName) {
+          subHeaderText += `  |  Version: ${versionName}`;
+        }
+        if (sheet.id !== 'parent') {
+          const parentSheet = sheets.find(s => s.id === 'parent');
+          if (parentSheet) {
+            subHeaderText += `  |  Parent: ${parentSheet.name}`;
+          }
+        }
+        pdf.text(subHeaderText, margin, margin + 15);
+
+        // Add Image
+        const imgProps = pdf.getImageProperties(dataUrl);
+        const maxWidth = pageWidth - (2 * margin);
+        const maxHeight = pageHeight - 45; // Space for header and bottom margin
+        
+        let finalWidth = maxWidth;
+        let finalHeight = (imgProps.height * finalWidth) / imgProps.width;
+        
+        if (finalHeight > maxHeight) {
+          finalHeight = maxHeight;
+          finalWidth = (imgProps.width * finalHeight) / imgProps.height;
+        }
+
+        // Center horizontally
+        const xOffset = (pageWidth - finalWidth) / 2;
+        
+        pdf.addImage(dataUrl, 'PNG', xOffset, 40, finalWidth, finalHeight);
+        
+        // Footer
+        pdf.setFontSize(8);
+        pdf.setTextColor(148, 163, 184);
+        pdf.text(`Page ${i + 1} of ${sortedSheets.length}`, pageWidth / 2, pageHeight - 5, { align: 'center' });
+      }
+
+      pdf.save(`${projectName.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`);
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Failed to export PDF. Please try again.');
+    } finally {
+      handleSwitchSheet(originalActiveSheetId);
+      setIsSaving(false);
+    }
+  };
+
   // Handle project name editing
   const startEditingProjectName = useCallback(() => {
     if (isReadOnly || (!projectId && !processId)) return;
@@ -1237,6 +1370,15 @@ export default function CreateProcessPage() {
                   onUpdate={handleUpdateCollaborators}
                 />
               )}
+              <Button
+                variant="outline"
+                onClick={handleExportPDF}
+                disabled={isSaving}
+                className="flex items-center gap-2 border-gray-300 text-gray-700 hover:bg-gray-50 h-9"
+              >
+                <Download size={18} />
+                {isSaving ? 'Exporting...' : 'Export'}
+              </Button>
               {projectStatus === 'published' ? (
                 canUnlock && (
                   <Button
