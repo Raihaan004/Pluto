@@ -30,11 +30,6 @@ const sidebarItems = [
     icon: ClipboardList,
   },
   {
-    title: "Deadlines",
-    href: "/dashboard/deadlines",
-    icon: Clock,
-  },
-  {
     title: "Help",
     href: "/dashboard/help",
     icon: HelpCircle,

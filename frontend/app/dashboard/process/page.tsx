@@ -11,6 +11,14 @@ import { FileText, Edit2, Check, X, Trash2, Eye, Plus, Clock } from "lucide-reac
 import { useRouter } from "next/navigation"
 import useSWR from 'swr'
 import { formatDistanceToNow } from "date-fns"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 interface Process {
   id: number
@@ -28,6 +36,8 @@ export default function ProcessPage() {
   const router = useRouter()
   const [editingId, setEditingId] = useState<number | null>(null)
   const [newName, setNewName] = useState("")
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [processToDelete, setProcessToDelete] = useState<number | null>(null)
 
   const { data: processes = [], error, isLoading, mutate } = useSWR<Process[]>(
     user ? `${process.env.NEXT_PUBLIC_API_URL}/processes/${user.id}` : null,
@@ -60,19 +70,26 @@ export default function ProcessPage() {
     }
   }
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this process? This action cannot be undone.")) return
+  const handleDelete = (id: number) => {
+    setProcessToDelete(id)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!processToDelete) return
     try {
       // Optimistic update
       mutate(
-        processes.filter((p: Process) => p.id !== id),
+        processes.filter((p: Process) => p.id !== processToDelete),
         false
       )
       
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/processes/${id}`, {
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/processes/${processToDelete}`, {
         headers: { "X-Clerk-User-Id": user?.id }
       })
       mutate() // Revalidate
+      setIsDeleteDialogOpen(false)
+      setProcessToDelete(null)
     } catch (error) {
       console.error("Failed to delete process:", error)
       alert("Failed to delete process")
@@ -264,6 +281,26 @@ export default function ProcessPage() {
           </div>
         </div>
       </div>
+
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Process</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this process? This action cannot be undone and all data associated with it will be permanently removed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>Cancel</Button>
+            <Button 
+              onClick={confirmDelete}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

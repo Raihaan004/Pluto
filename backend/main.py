@@ -262,9 +262,10 @@ def get_dashboard_stats(clerk_id: str):
         tasks_assigned = 0
         upcoming_deadlines = 0
         
-        from datetime import datetime, timedelta
-        now = datetime.now()
-        next_week = now + timedelta(days=7)
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        next_week = today_start + timedelta(days=7)
         
         # Set to track unique task IDs to avoid double counting
         assigned_task_ids = set()
@@ -273,7 +274,7 @@ def get_dashboard_stats(clerk_id: str):
             # Check Project Ownership/Collaboration
             is_owner = project.get("user_id") == clerk_id
             collaborators = project.get("collaborators", [])
-            is_collaborator = any(c.get("clerk_id") == clerk_id for c in collaborators)
+            is_collaborator = any(c.get("user_id") == clerk_id for c in collaborators)
             
             # Check if user is assigned to any node in this project
             is_assigned_to_any_node = False
@@ -318,7 +319,10 @@ def get_dashboard_stats(clerk_id: str):
                             if deadline_str:
                                 try:
                                     deadline = datetime.fromisoformat(deadline_str.replace('Z', '+00:00'))
-                                    if now <= deadline <= next_week:
+                                    if deadline.tzinfo is None:
+                                        deadline = deadline.replace(tzinfo=timezone.utc)
+                                    
+                                    if today_start <= deadline <= next_week:
                                         upcoming_deadlines += 1
                                 except:
                                     continue

@@ -79,6 +79,10 @@ export default function ProjectsPage() {
   const [projectToRename, setProjectToRename] = useState<Project | null>(null)
   const [newProjectName, setNewProjectName] = useState("")
 
+  // Delete State
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [projectToDelete, setProjectToDelete] = useState<number | null>(null)
+
   const { data: projects = [], mutate: mutateProjects, isLoading: loadingProjects } = useSWR<Project[]>(
     user ? `${process.env.NEXT_PUBLIC_API_URL}/projects/${user.id}` : null,
     fetcher
@@ -121,16 +125,23 @@ export default function ProjectsPage() {
     setIsRenameDialogOpen(true)
   }
 
-  const handleDeleteProject = async (e: React.MouseEvent, projectId: number) => {
+  const handleDeleteProject = (e: React.MouseEvent, projectId: number) => {
     e.stopPropagation() // Prevent navigation
-    if (!confirm("Are you sure you want to delete this project?")) return
+    setProjectToDelete(projectId)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return
 
     try {
-      mutateProjects(projects.filter((p: Project) => p.id !== projectId), false)
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/projects/${projectId}`, {
+      mutateProjects(projects.filter((p: Project) => p.id !== projectToDelete), false)
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/projects/${projectToDelete}`, {
         headers: { "X-Clerk-User-Id": user?.id }
       })
       mutateProjects()
+      setIsDeleteDialogOpen(false)
+      setProjectToDelete(null)
     } catch (error) {
       console.error("Failed to delete project:", error)
       alert("Failed to delete project")
@@ -396,6 +407,24 @@ export default function ProjectsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Project</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this project? This action cannot be undone and all data associated with it will be permanently removed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>Cancel</Button>
+            <Button 
+              onClick={confirmDeleteProject}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>    </div>
   )
 }

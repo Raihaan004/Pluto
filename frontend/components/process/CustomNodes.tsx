@@ -47,23 +47,24 @@ const MultiHandles = ({ colorClass }: { colorClass: string }) => {
   );
 };
 
-const NodeIcons = ({ data }: { data: any }) => {
+const NodeIcons = ({ data, type }: { data: any, type?: string }) => {
   const { openNodeDialog } = useProcessContext();
   const hasLinks = data.links && data.links.length > 0;
   const hasTemplates = data.templates && data.templates.length > 0;
   const hasGuidelines = data.guidelines && data.guidelines.length > 0;
   const hasChecklists = data.checklists && data.checklists.length > 0;
-  const hasRoles = (data.roles && data.roles.length > 0) || (data.responsibility && data.responsibility.length > 0) || (data.support && data.support.length > 0);
+  const hasRoles = (data.roles && data.roles.length > 0) || (data.responsibility && data.responsibility.length > 0) || (data.support && data.support.length > 0) || data.rolesDescription || data.responsibilitiesDescription;
   const hasDescription = data.description && data.description.trim().length > 0;
   const hasVerificationComments = data.verificationComments && data.verificationComments.trim().length > 0;
   const hasAuthorComments = data.authorComments && data.authorComments.trim().length > 0;
-  const hasComments = hasVerificationComments || hasAuthorComments;
+  const hasReviewerComments = data.reviewerComments && data.reviewerComments.trim().length > 0;
+  const hasComments = hasVerificationComments || hasAuthorComments || hasReviewerComments;
 
   if (!hasLinks && !hasTemplates && !hasGuidelines && !hasChecklists && !hasRoles && !hasDescription && !hasComments) return null;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent node selection
-    openNodeDialog(data);
+    openNodeDialog({ ...data, type });
   };
 
   return (
@@ -121,7 +122,7 @@ const WorkProductNode = ({ data, selected, width, height }: any) => {
           color: data.textColor || '#1E3A8A'
         }}
       >
-        <NodeIcons data={data} />
+        <NodeIcons data={data} type="workProduct" />
         <StatusIndicator data={data} />
         <div 
           className={fontSize ? "" : "text-sm"}
@@ -153,7 +154,7 @@ const ActivityNode = ({ data, selected, width, height }: any) => {
           color: data.textColor || '#713F12'
         }}
       >
-        <NodeIcons data={data} />
+        <NodeIcons data={data} type="activity" />
         <StatusIndicator data={data} />
         <div 
           className={fontSize ? "" : "text-sm"}
@@ -191,7 +192,7 @@ const DecisionNode = ({ data, selected, width, height }: any) => {
         <div className="relative z-10 w-full h-full flex items-center justify-center pointer-events-none">
            {/* Icons need to be positioned carefully in diamond */}
            <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-auto">
-              <NodeIcons data={data} />
+              <NodeIcons data={data} type="decision" />
            </div>
            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-auto">
               <StatusIndicator data={data} />
@@ -235,7 +236,7 @@ const ProcessNode = ({ data, selected, width, height }: any) => {
           color: data.textColor || '#14532D'
         }}
       >
-        <NodeIcons data={data} />
+        <NodeIcons data={data} type="process" />
         <StatusIndicator data={data} />
         <div 
           className={fontSize ? "" : "text-sm"}
@@ -268,7 +269,7 @@ const DocumentNode = ({ data, selected, width, height }: any) => {
           borderRadius: '0 0 10px 10px'
         }}
       >
-        <NodeIcons data={data} />
+        <NodeIcons data={data} type="document" />
         <StatusIndicator data={data} />
         <div 
           className={fontSize ? "" : "text-sm"}
@@ -376,16 +377,6 @@ const SwimLaneNode = ({ id, data, selected, width, height }: any) => {
               </div>
             </PopoverContent>
           </Popover>
-          
-          {selected && (
-            <button 
-              onClick={handleRotate}
-              className={`absolute ${isHorizontal ? 'top-2 left-1/2 -translate-x-1/2' : 'right-2 top-1/2 -translate-y-1/2'} p-1.5 bg-white/80 hover:bg-white rounded-full shadow-sm border border-gray-200 transition-all z-20 flex items-center justify-center`}
-              title="Rotate Lane"
-            >
-              <RotateCw className="w-3.5 h-3.5 text-blue-600" />
-            </button>
-          )}
         </div>
         <div className="grow" />
       </div>

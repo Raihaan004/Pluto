@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, CalendarIcon } from 'lucide-react';
+import { 
+  X, Plus, Trash2, CalendarIcon, Tag, FileText, 
+  User, Users, Settings, Palette, Type, 
+  Link as LinkIcon, CheckCircle2, AlertCircle,
+  Info, Layout, AlignLeft, AlignCenter, AlignRight,
+  ChevronDown, ChevronUp, MessageSquare
+} from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
@@ -9,6 +15,18 @@ import { useUser } from '@clerk/nextjs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
+import { Badge } from "@/components/ui/badge"
+import { Card, CardContent } from "@/components/ui/card"
 
 interface PropertiesPanelProps {
   selectedNode: any;
@@ -16,6 +34,7 @@ interface PropertiesPanelProps {
   onClose: () => void;
   projectId?: string | null;
   projectOwnerId?: string | null;
+  isPublished?: boolean;
 }
 
 interface User {
@@ -26,7 +45,7 @@ interface User {
   role: string;
 }
 
-export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, projectOwnerId }: PropertiesPanelProps) => {
+export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, projectOwnerId, isPublished }: PropertiesPanelProps) => {
   const { user } = useUser();
   const [formData, setFormData] = useState<any>({
     label: '',
@@ -48,6 +67,9 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
     description: '',
     verificationComments: '',
     authorComments: '',
+    reviewerComments: '',
+    rolesDescription: '',
+    responsibilitiesDescription: '',
     deadline: undefined as Date | undefined,
   });
 
@@ -58,6 +80,11 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
   const [loadingUsers, setLoadingUsers] = useState(false);
 
   const isTextNode = selectedNode?.type === 'text';
+  const isWorkProduct = selectedNode?.type === 'workProduct';
+  const isActivity = selectedNode?.type === 'activity';
+  const isDecision = selectedNode?.type === 'decision';
+  const isProcess = selectedNode?.type === 'process';
+  const isDocument = selectedNode?.type === 'document';
 
   // Dialog State
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -65,14 +92,54 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
   const [newItemValue, setNewItemValue] = useState('');
   const [newLinkLabel, setNewLinkLabel] = useState('');
 
+  // Multi-link state for Workproducts
+  const [templateUrl, setTemplateUrl] = useState('');
+  const [templateLabel, setTemplateLabel] = useState('');
+  const [guidelinesUrl, setGuidelinesUrl] = useState('');
+  const [guidelinesLabel, setGuidelinesLabel] = useState('');
+  const [checklistUrl, setChecklistUrl] = useState('');
+  const [checklistLabel, setChecklistLabel] = useState('');
+
   const openAddDialog = (field: string) => {
     setCurrentAddField(field);
     setNewItemValue('');
     setNewLinkLabel('');
+    
+    // Reset multi-link fields
+    setTemplateUrl('');
+    setTemplateLabel('');
+    setGuidelinesUrl('');
+    setGuidelinesLabel('');
+    setChecklistUrl('');
+    setChecklistLabel('');
+    
     setIsAddDialogOpen(true);
   };
 
   const handleAddItem = () => {
+    if (isWorkProduct && currentAddField === 'links') {
+      const newLinks = [...(formData.links || [])];
+      
+      if (templateUrl) {
+        newLinks.push({ url: templateUrl, label: templateLabel || `Template: ${templateUrl}` });
+      }
+      if (guidelinesUrl) {
+        newLinks.push({ url: guidelinesUrl, label: guidelinesLabel || `Guideline: ${guidelinesUrl}` });
+      }
+      if (checklistUrl) {
+        newLinks.push({ url: checklistUrl, label: checklistLabel || `Checklist: ${checklistUrl}` });
+      }
+
+      if (newLinks.length > (formData.links?.length || 0)) {
+        setFormData((prev: any) => ({
+          ...prev,
+          links: newLinks
+        }));
+      }
+      setIsAddDialogOpen(false);
+      return;
+    }
+
     if (newItemValue && currentAddField) {
       let itemToAdd: any = newItemValue;
       if (currentAddField === 'links') {
@@ -130,6 +197,9 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
         description: selectedNode.data.description || '',
         verificationComments: selectedNode.data.verificationComments || '',
         authorComments: selectedNode.data.authorComments || '',
+        reviewerComments: selectedNode.data.reviewerComments || '',
+        rolesDescription: selectedNode.data.rolesDescription || '',
+        responsibilitiesDescription: selectedNode.data.responsibilitiesDescription || '',
         deadline: selectedNode.data.deadline ? new Date(selectedNode.data.deadline) : undefined
       };
       setFormData(data);
@@ -234,11 +304,15 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
     const isSupport = formData.support?.includes(user?.id);
 
     if (field === 'authorComments') {
-        if (isAdmin || isOwner) {
+        if (isAdmin || isOwner || isResponsible || isSupport) {
             handleChange(field, value);
         }
     } else if (field === 'verificationComments') {
         if (isAdmin || isResponsible || isSupport) {
+            handleChange(field, value);
+        }
+    } else if (field === 'reviewerComments') {
+        if (isAdmin || isOwner || isResponsible || isSupport) {
             handleChange(field, value);
         }
     } else {
@@ -250,7 +324,9 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
     const currentUser = availableUsers.find(u => u.clerk_id === user?.id);
     const isAdmin = currentUser?.role === 'admin';
     const isOwner = projectOwnerId === user?.id;
-    return isAdmin || isOwner;
+    const isResponsible = formData.responsibility?.[0] === user?.id;
+    const isSupport = formData.support?.includes(user?.id);
+    return isAdmin || isOwner || isResponsible || isSupport;
   };
 
   const canEditVerificationComments = () => {
@@ -261,8 +337,17 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
     return isAdmin || isResponsible || isSupport;
   };
 
+  const canEditReviewerComments = () => {
+    const currentUser = availableUsers.find(u => u.clerk_id === user?.id);
+    const isAdmin = currentUser?.role === 'admin';
+    const isOwner = projectOwnerId === user?.id;
+    const isResponsible = formData.responsibility?.[0] === user?.id;
+    const isSupport = formData.support?.includes(user?.id);
+    return isAdmin || isOwner || isResponsible || isSupport;
+  };
+
   const handleSave = async () => {
-    // 1. Identify new assignments
+    // 1. Identify new assignments (Keep for backward compatibility if needed, though UI is removed)
     const oldResponsibility = initialFormData?.responsibility || [];
     const newResponsibility = formData.responsibility || [];
     const newlyAssignedResponsible = newResponsibility.filter((id: string) => !oldResponsibility.includes(id));
@@ -325,7 +410,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
       }
     };
 
-    if (projectId) {
+    if (projectId && (newlyAssignedResponsible.length > 0 || newlyAssignedSupport.length > 0)) {
       await processAssignments(newlyAssignedResponsible, 'Responsible');
       await processAssignments(newlyAssignedSupport, 'Support');
     }
@@ -339,422 +424,721 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
 
   if (!selectedNode) return null;
 
+  const getNodeIcon = () => {
+    if (isWorkProduct) return <CheckCircle2 className="w-5 h-5 text-blue-500" />;
+    if (isActivity) return <Settings className="w-5 h-5 text-green-500" />;
+    if (isDecision) return <AlertCircle className="w-5 h-5 text-orange-500" />;
+    if (isProcess) return <Layout className="w-5 h-5 text-purple-500" />;
+    if (isDocument) return <FileText className="w-5 h-5 text-gray-500" />;
+    return <Info className="w-5 h-5 text-blue-500" />;
+  };
+
   return (
-    <div className="w-80 border-l bg-white h-full overflow-y-auto shadow-xl absolute right-0 top-0 z-50 flex flex-col">
-      <div className="p-4 border-b flex justify-between items-center bg-gray-50">
-        <h2 className="font-bold text-lg text-gray-800">{selectedNode.data.label || 'Node'} Properties</h2>
-        <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-          <X size={20} />
-        </button>
+    <div className="w-85 border-l bg-white h-full overflow-y-auto shadow-2xl absolute right-0 top-0 z-50 flex flex-col animate-in slide-in-from-right duration-300">
+      <div className="p-5 border-b flex justify-between items-center bg-white sticky top-0 z-10 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-slate-100 rounded-lg">
+            {getNodeIcon()}
+          </div>
+          <div>
+            <h2 className="font-bold text-base text-slate-900 leading-tight">
+              {selectedNode.data.label || 'Node'}
+            </h2>
+            <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Properties</p>
+          </div>
+        </div>
+        <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full hover:bg-slate-100">
+          <X size={18} className="text-slate-500" />
+        </Button>
       </div>
 
-      <div className="p-4 space-y-6 flex-1">
-        {/* Label */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">Label</label>
-          <input
-            type="text"
-            value={formData.label}
-            onChange={(e) => handleChange('label', e.target.value)}
-            className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-          />
-        </div>
+      <div className="p-5 space-y-8 flex-1 pb-24">
+        {/* Basic Info Section */}
+        <div className="space-y-4">
+          {!isTextNode && (
+            <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
+              <Tag size={16} className="text-blue-500" />
+              <h3>Basic Information</h3>
+            </div>
+          )}
+          
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Label</Label>
+            <Input
+              value={formData.label}
+              onChange={(e) => handleChange('label', e.target.value)}
+              disabled={isPublished}
+              className={cn(
+                "bg-white border-slate-200 focus:ring-blue-500/20 focus:border-blue-500 transition-all",
+                isPublished && "bg-slate-50 opacity-70"
+              )}
+              placeholder="Enter node label..."
+            />
+          </div>
 
-        {/* Description */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">Description</label>
-          <textarea
-            value={formData.description}
-            onChange={(e) => handleChange('description', e.target.value)}
-            className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-20"
-            placeholder="Enter work product description"
-          />
-        </div>
-
-        {/* State */}
-        {!isTextNode && projectId && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">State</label>
-          <select
-            value={formData.state}
-            onChange={(e) => handleStateChange(e.target.value)}
-            disabled={!canEditVerificationComments() && projectOwnerId !== user?.id}
-            className={cn(
-              "w-full p-2 border rounded-md text-sm outline-none",
-              (!canEditVerificationComments() && projectOwnerId !== user?.id) && "bg-gray-50 cursor-not-allowed"
-            )}
-          >
-            <option value="None">None</option>
-            <option value="Draft">Draft</option>
-            <option value="Refined">Refined</option>
-            <option value="Final">Final</option>
-          </select>
-        </div>
-        )}
-
-        {/* Comments */}
-        {!isTextNode && projectId && (
-          <div className="space-y-4 border-t pt-4">
-            <h3 className="font-bold text-sm text-gray-800">Comments</h3>
-            
+          {!isTextNode && (
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Verification Comments</label>
-              <textarea
-                value={formData.verificationComments}
-                onChange={(e) => handleCommentChange('verificationComments', e.target.value)}
-                readOnly={!canEditVerificationComments()}
+              <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Description</Label>
+              <Textarea
+                value={formData.description}
+                onChange={(e) => handleChange('description', e.target.value)}
+                disabled={isPublished}
                 className={cn(
-                  "w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-15",
-                  !canEditVerificationComments() && "bg-gray-50 cursor-not-allowed"
+                  "bg-white border-slate-200 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-25 resize-none",
+                  isPublished && "bg-slate-50 opacity-70"
                 )}
-                placeholder={canEditVerificationComments() ? "Add verification comments..." : "Only responsible/support can edit"}
+                placeholder="Describe this node's purpose..."
               />
             </div>
+          )}
+        </div>
 
+        {!isTextNode && <Separator className="bg-slate-200/60" />}
+
+        {/* State Section */}
+        {isWorkProduct && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
+              <Info size={16} className="text-indigo-500" />
+              <h3>State</h3>
+            </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Author Comments</label>
-              <textarea
-                value={formData.authorComments}
-                onChange={(e) => handleCommentChange('authorComments', e.target.value)}
-                readOnly={!canEditAuthorComments()}
-                className={cn(
-                  "w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-15",
-                  !canEditAuthorComments() && "bg-gray-50 cursor-not-allowed"
-                )}
-                placeholder={canEditAuthorComments() ? "Add author comments..." : "Only project author can edit"}
-              />
+              <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Current State</Label>
+              <Select
+                value={formData.state}
+                onValueChange={(val) => handleStateChange(val)}
+                disabled={!!(isPublished || (!canEditVerificationComments() && projectId && projectOwnerId !== user?.id))}
+              >
+                <SelectTrigger className={cn(
+                  "bg-white border-slate-200",
+                  (isPublished || (!canEditVerificationComments() && projectId && projectOwnerId !== user?.id)) && "bg-slate-50 opacity-70"
+                )}>
+                  <SelectValue placeholder="Select state" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="None">None</SelectItem>
+                  <SelectItem value="Draft">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-slate-400" />
+                      Draft
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="Refined">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-blue-400" />
+                      Refined
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="Final">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-green-500" />
+                      Final
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         )}
 
-        {/* Roles & Responsibilities Section */}
-        {!isTextNode && projectId && (
-        <div className="space-y-4 border-t pt-4">
-            <div className="flex justify-between items-center">
-                <h3 className="font-bold text-sm text-gray-800">Roles & Responsibilities</h3>
-                <button 
-                  onClick={() => setShowRolesManager(!showRolesManager)}
-                  className="bg-green-600 text-white text-xs px-2 py-1 rounded hover:bg-green-700 transition-colors"
-                >
-                  {showRolesManager ? 'Hide' : 'Manage Roles'}
-                </button>
+        {/* Comments Section for Work Products in Projects */}
+        {isWorkProduct && projectId && (
+          <div className="space-y-6">
+            <Separator className="bg-slate-200/60" />
+            <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
+              <MessageSquare size={16} className="text-blue-500" />
+              <h3>Comments & Feedback</h3>
             </div>
-
-            {showRolesManager && (
-              <div className="p-3 bg-gray-50 rounded-md border space-y-3">
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    value={newRoleName}
-                    onChange={(e) => setNewRoleName(e.target.value)}
-                    placeholder="Enter role name"
-                    className="flex-1 p-1.5 text-sm border rounded"
-                  />
-                  <button onClick={handleAddRole} className="bg-green-600 text-white p-1.5 rounded hover:bg-green-700">
-                    <Plus size={16} />
-                  </button>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Author Comments</Label>
+                  {!canEditAuthorComments() && (
+                    <Badge variant="outline" className="text-[9px] font-bold uppercase text-slate-400 border-slate-200">Read Only</Badge>
+                  )}
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {formData.roles.map((role: string, index: number) => (
-                    <div key={index} className="bg-white border px-2 py-1 rounded text-xs flex items-center gap-1">
-                      {role}
-                      <button onClick={() => handleRemoveRole(index)} className="text-red-500 hover:text-red-700">
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                <Textarea
+                  value={formData.authorComments}
+                  onChange={(e) => handleCommentChange('authorComments', e.target.value)}
+                  disabled={!canEditAuthorComments()}
+                  className={cn(
+                    "bg-white border-slate-200 min-h-20 resize-none text-sm",
+                    !canEditAuthorComments() && "bg-slate-50 opacity-70"
+                  )}
+                  placeholder="Author's notes and justifications..."
+                />
               </div>
-            )}
 
-            {/* Responsibility */}
-            <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Responsibility</label>
-                <select 
-                    className="w-full p-2 border rounded-md text-sm outline-none"
-                    onChange={(e) => handleUserSelection('responsibility', e.target.value)}
-                    value={formData.responsibility?.[0] || ""}
-                    disabled={loadingUsers}
-                >
-                    <option value="" disabled>
-                        {loadingUsers ? 'Loading users...' : 'Select a user...'}
-                    </option>
-                    {availableUsers.map(u => (
-                        <option key={u.clerk_id} value={u.clerk_id}>
-                            {u.first_name} {u.last_name} ({u.email})
-                        </option>
-                    ))}
-                </select>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Viewer Comments</Label>
+                  {!canEditReviewerComments() && (
+                    <Badge variant="outline" className="text-[9px] font-bold uppercase text-slate-400 border-slate-200">Read Only</Badge>
+                  )}
+                </div>
+                <Textarea
+                  value={formData.reviewerComments}
+                  onChange={(e) => handleCommentChange('reviewerComments', e.target.value)}
+                  disabled={!canEditReviewerComments()}
+                  className={cn(
+                    "bg-white border-slate-200 min-h-20 resize-none text-sm",
+                    !canEditReviewerComments() && "bg-slate-50 opacity-70"
+                  )}
+                  placeholder="Viewer's feedback and review notes..."
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Activity Specific Fields */}
+        {isActivity && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
+                <Users size={16} className="text-green-500" />
+                <h3>Roles & Responsibilities</h3>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 px-3 text-xs font-semibold text-blue-600 hover:bg-blue-50"
+                onClick={() => setShowRolesManager(true)}
+                disabled={isPublished}
+              >
+                Manage Roles
+              </Button>
             </div>
 
-            {/* Deadline */}
+            <div className="grid gap-6">
+              {/* Responsibility */}
+              <div className="space-y-3">
+                <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Responsibility</Label>
+                {projectId ? (
+                  <Select 
+                    onValueChange={(val) => handleUserSelection('responsibility', val)}
+                    value={formData.responsibility?.[0] || ""}
+                    disabled={isPublished || loadingUsers}
+                  >
+                    <SelectTrigger className={cn("bg-white border-slate-200", (isPublished || loadingUsers) && "bg-slate-50 opacity-70")}>
+                      <SelectValue placeholder={loadingUsers ? 'Loading users...' : 'Select responsible user'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableUsers.map(u => (
+                        <SelectItem key={u.clerk_id} value={u.clerk_id}>
+                          {u.first_name} {u.last_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="text-[10px] text-slate-400 italic px-1">User assignment available in project mode</div>
+                )}
+                <Textarea
+                  value={formData.responsibilitiesDescription}
+                  onChange={(e) => handleChange('responsibilitiesDescription', e.target.value)}
+                  disabled={isPublished}
+                  className={cn(
+                    "bg-white border-slate-200 text-sm min-h-20 mt-2",
+                    isPublished && "bg-slate-50 opacity-70"
+                  )}
+                  placeholder="Define specific responsibilities..."
+                />
+              </div>
+
+              {/* Support */}
+              <div className="space-y-3">
+                <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Support</Label>
+                {projectId ? (
+                  <>
+                    <Select 
+                      onValueChange={(val) => handleUserSelection('support', val)}
+                      value=""
+                      disabled={isPublished || loadingUsers}
+                    >
+                      <SelectTrigger className={cn("bg-white border-slate-200", (isPublished || loadingUsers) && "bg-slate-50 opacity-70")}>
+                        <SelectValue placeholder="Add support user..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableUsers.map(u => (
+                          <SelectItem key={u.clerk_id} value={u.clerk_id}>
+                            {u.first_name} {u.last_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    
+                    {formData.support?.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {formData.support?.map((userId: string, i: number) => {
+                          const user = availableUsers.find(u => u.clerk_id === userId);
+                          const displayName = user 
+                            ? (user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email)
+                            : userId;
+                          
+                          return (
+                            <Badge key={i} variant="secondary" className="bg-slate-100 text-slate-700 border-slate-200 py-1 pl-2 pr-1 flex items-center gap-1">
+                              {displayName}
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-4 w-4 rounded-full hover:bg-slate-200"
+                                onClick={() => handleArrayRemove('support', i)}
+                                disabled={isPublished}
+                              >
+                                <X size={10} />
+                              </Button>
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-[10px] text-slate-400 italic px-1">User assignment available in project mode</div>
+                )}
+                <Textarea
+                  value={formData.rolesDescription}
+                  onChange={(e) => handleChange('rolesDescription', e.target.value)}
+                  disabled={isPublished}
+                  className={cn(
+                    "bg-white border-slate-200 text-sm min-h-20 mt-2",
+                    isPublished && "bg-slate-50 opacity-70"
+                  )}
+                  placeholder="Define roles involved..."
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Deadline Section */}
+        {isActivity && projectId && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
+              <CalendarIcon size={16} className="text-red-500" />
+              <h3>Timeline</h3>
+            </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Deadline</label>
+              <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Deadline</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant={"outline"}
+                    disabled={isPublished}
                     className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !formData.deadline && "text-muted-foreground"
+                      "w-full justify-start text-left font-normal bg-white border-slate-200 hover:bg-slate-50",
+                      !formData.deadline && "text-slate-400",
+                      isPublished && "bg-slate-50 opacity-70"
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {formData.deadline ? format(formData.deadline, "PPP") : <span>Pick a date</span>}
+                    {formData.deadline ? format(formData.deadline, "PPP") : <span>Set a deadline</span>}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={formData.deadline}
-                    onSelect={(date) => handleChange('deadline', date)}
-                    initialFocus
-                  />
-                </PopoverContent>
+                {!isPublished && (
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={formData.deadline}
+                      onSelect={(date) => handleChange('deadline', date)}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                )}
               </Popover>
             </div>
+          </div>
+        )}
 
-            {/* Support */}
+        {/* Links Section */}
+        {(isWorkProduct || isDocument) && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
+                <LinkIcon size={16} className="text-blue-500" />
+                <h3>Resources & Links</h3>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => openAddDialog('links')} 
+                disabled={isPublished}
+                className="h-8 w-8 rounded-full text-blue-600 hover:bg-blue-50"
+              >
+                <Plus size={16} />
+              </Button>
+            </div>
+            
             <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Support</label>
-                <select 
-                    className="w-full p-2 border rounded-md text-sm outline-none"
-                    onChange={(e) => handleUserSelection('support', e.target.value)}
-                    value=""
-                    disabled={loadingUsers}
-                >
-                    <option value="" disabled>Select a user...</option>
-                    {availableUsers.map(u => (
-                        <option key={u.clerk_id} value={u.clerk_id}>
-                            {u.first_name} {u.last_name} ({u.email})
-                        </option>
-                    ))}
-                </select>
-                <div className="flex flex-wrap gap-1 mt-2">
-                    {formData.support?.map((userId: string, i: number) => {
-                        const user = availableUsers.find(u => u.clerk_id === userId);
-                        const displayName = user 
-                            ? (user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email)
-                            : userId; // Fallback to ID if not found (or if it was a legacy name)
-                        
-                        return (
-                            <span key={i} className="bg-gray-100 text-xs px-2 py-1 rounded flex items-center gap-1">
-                                {displayName}
-                                <button onClick={() => handleArrayRemove('support', i)}><X size={12}/></button>
-                            </span>
-                        );
-                    })}
-                </div>
-            </div>
-        </div>
-        )}
-
-        {/* Links */}
-        <div className="space-y-2 border-t pt-4">
-            <div className="flex justify-between items-center">
-                <label className="text-sm font-medium text-gray-700">Links</label>
-                <button onClick={() => openAddDialog('links')} className="text-blue-600 hover:text-blue-800">
-                    <Plus size={16} />
-                </button>
-            </div>
-            <div className="space-y-2">
-                {formData.links?.map((link: any, i: number) => {
-                    const url = typeof link === 'string' ? link : link.url;
-                    const label = typeof link === 'string' ? link : link.label;
-                    return (
-                        <div key={i} className="flex items-center gap-2 bg-gray-50 p-2 rounded text-sm">
-                            <div className="flex-1 truncate">
-                                <div className="font-medium text-gray-900">{label}</div>
-                                <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">{url}</a>
-                            </div>
-                            <button onClick={() => handleArrayRemove('links', i)} className="text-red-500 hover:text-red-700">
-                                <Trash2 size={14} />
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-
-
-        {/* Colors */}
-        <div className="grid grid-cols-2 gap-4 border-t pt-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Background</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={formData.backgroundColor || '#ffffff'}
-                onChange={(e) => handleChange('backgroundColor', e.target.value)}
-                className="h-8 w-full cursor-pointer rounded border"
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Text Color</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={formData.textColor || '#000000'}
-                onChange={(e) => handleChange('textColor', e.target.value)}
-                className="h-8 w-full cursor-pointer rounded border"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Font Size */}
-        {isTextNode && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">Font Size</label>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => handleChange('fontSize', Math.max(8, formData.fontSize - 1))}
-              className="px-3 py-1 bg-gray-600 text-white rounded text-sm"
-            >
-              A-
-            </button>
-            <span className="text-sm font-medium w-12 text-center">{formData.fontSize}px</span>
-            <button 
-              onClick={() => handleChange('fontSize', Math.min(32, formData.fontSize + 1))}
-              className="px-3 py-1 bg-green-600 text-white rounded text-sm"
-            >
-              A+
-            </button>
-          </div>
-        </div>
-        )}
-
-        {/* Text Formatting */}
-        {isTextNode && (
-        <div className="space-y-4">
-          <h3 className="font-bold text-sm text-gray-800 border-b pb-1">Text Formatting</h3>
-          
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="bold"
-              checked={formData.isBold}
-              onChange={(e) => handleChange('isBold', e.target.checked)}
-              className="rounded border-gray-300"
-            />
-            <label htmlFor="bold" className="text-sm text-gray-700">Bold Text</label>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Horizontal Alignment</label>
-            <select
-              value={formData.alignment}
-              onChange={(e) => handleChange('alignment', e.target.value)}
-              className="w-full p-2 border rounded-md text-sm outline-none"
-            >
-              <option value="left">Left</option>
-              <option value="center">Center</option>
-              <option value="right">Right</option>
-            </select>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Vertical Alignment</label>
-            <select
-              value={formData.verticalAlignment}
-              onChange={(e) => handleChange('verticalAlignment', e.target.value)}
-              className="w-full p-2 border rounded-md text-sm outline-none"
-            >
-              <option value="top">Top</option>
-              <option value="middle">Middle</option>
-              <option value="bottom">Bottom</option>
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="wrap"
-              checked={formData.wrapText}
-              onChange={(e) => handleChange('wrapText', e.target.checked)}
-              className="rounded border-gray-300"
-            />
-            <label htmlFor="wrap" className="text-sm text-gray-700">Wrap Text</label>
-          </div>
-        </div>
-        )}
-
-        {/* Metadata Sections */}
-        {!isTextNode && ['Templates', 'Guidelines', 'Checklists'].map((section) => {
-            const field = section.toLowerCase();
-            return (
-                <div key={section} className="space-y-2 border-t pt-4">
-                    <div className="flex justify-between items-center">
-                        <label className="text-sm font-medium text-gray-700">{section}</label>
-                        <button onClick={() => openAddDialog(field)} className="text-blue-600 hover:text-blue-800">
-                            <Plus size={16} />
-                        </button>
+              {formData.links?.length > 0 ? (
+                formData.links?.map((link: any, i: number) => {
+                  const url = typeof link === 'string' ? link : link.url;
+                  const label = typeof link === 'string' ? link : link.label;
+                  return (
+                    <div key={i} className="group flex items-center gap-3 bg-white border border-slate-200 p-3 rounded-xl hover:border-blue-200 hover:shadow-sm transition-all">
+                      <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+                        <LinkIcon size={14} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-slate-900 text-xs truncate">{label}</div>
+                        <a href={url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-slate-400 hover:text-blue-600 truncate block">
+                          {url}
+                        </a>
+                      </div>
+                      {!isPublished && (
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => handleArrayRemove('links', i)} 
+                          className="h-7 w-7 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-all"
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      )}
                     </div>
-                    <div className="space-y-2">
-                        {formData[field]?.map((item: string, idx: number) => (
-                            <div key={idx} className="flex items-center gap-2 bg-gray-50 p-2 rounded text-sm">
-                                <a href={item} target="_blank" rel="noopener noreferrer" className="flex-1 truncate text-blue-600 hover:underline">{item}</a>
-                                <button onClick={() => handleArrayRemove(field, idx)} className="text-red-500 hover:text-red-700">
-                                    <Trash2 size={14} />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-center py-6 border-2 border-dashed border-slate-100 rounded-xl">
+                  <p className="text-xs text-slate-400">No resources added yet</p>
                 </div>
-            )
-        })}
+              )}
+            </div>
+          </div>
+        )}
 
-      </div>
-
-      <div className="p-4 border-t bg-gray-50 flex gap-2">
-        <button 
-            onClick={onClose}
-            className="flex-1 py-2 bg-gray-500 text-white rounded-md text-sm font-medium hover:bg-gray-600"
-        >
-            Cancel
-        </button>
-        <button 
-            onClick={handleSave}
-            className="flex-1 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700"
-        >
-            Save Changes
-        </button>
-      </div>
-
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add New {currentAddField.charAt(0).toUpperCase() + currentAddField.slice(1)}</DialogTitle>
-          </DialogHeader>
-          <div className="py-4 space-y-4">
-            {currentAddField === 'links' && (
+        {/* Appearance Section */}
+        {!isTextNode && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
+              <Palette size={16} className="text-pink-500" />
+              <h3>Appearance</h3>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Link Label</label>
-                <Input
-                  value={newLinkLabel}
-                  onChange={(e) => setNewLinkLabel(e.target.value)}
-                  placeholder="Enter label (e.g. Documentation)"
-                />
+                <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Background</Label>
+                <div className="flex items-center gap-2 p-1.5 bg-white border border-slate-200 rounded-lg">
+                  <input
+                    type="color"
+                    value={formData.backgroundColor || '#ffffff'}
+                    onChange={(e) => handleChange('backgroundColor', e.target.value)}
+                    className="h-6 w-10 cursor-pointer rounded border-none bg-transparent"
+                  />
+                  <span className="text-[10px] font-mono text-slate-500 uppercase">
+                    {formData.backgroundColor || '#FFFFFF'}
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Text Color</Label>
+                <div className="flex items-center gap-2 p-1.5 bg-white border border-slate-200 rounded-lg">
+                  <input
+                    type="color"
+                    value={formData.textColor || '#000000'}
+                    onChange={(e) => handleChange('textColor', e.target.value)}
+                    className="h-6 w-10 cursor-pointer rounded border-none bg-transparent"
+                  />
+                  <span className="text-[10px] font-mono text-slate-500 uppercase">
+                    {formData.textColor || '#000000'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Font Size & Formatting */}
+            {isTextNode && (
+              <div className="space-y-4 pt-2">
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Typography</Label>
+                  <div className="flex items-center justify-between bg-white border border-slate-200 p-2 rounded-lg">
+                    <div className="flex items-center gap-1">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8"
+                        onClick={() => handleChange('fontSize', Math.max(8, formData.fontSize - 1))}
+                      >
+                        <Type size={14} className="scale-75" />
+                      </Button>
+                      <span className="text-xs font-bold w-8 text-center">{formData.fontSize}</span>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8"
+                        onClick={() => handleChange('fontSize', Math.min(32, formData.fontSize + 1))}
+                      >
+                        <Type size={18} />
+                      </Button>
+                    </div>
+                    <Separator orientation="vertical" className="h-6" />
+                    <Button 
+                      variant={formData.isBold ? "secondary" : "ghost"} 
+                      size="icon" 
+                      className={cn("h-8 w-8", formData.isBold && "bg-slate-100")}
+                      onClick={() => handleChange('isBold', !formData.isBold)}
+                    >
+                      <span className="font-bold">B</span>
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">H-Align</Label>
+                    <div className="flex bg-white border border-slate-200 p-1 rounded-lg">
+                      <Button 
+                        variant={formData.alignment === 'left' ? "secondary" : "ghost"} 
+                        size="icon" className="h-8 flex-1"
+                        onClick={() => handleChange('alignment', 'left')}
+                      >
+                        <AlignLeft size={14} />
+                      </Button>
+                      <Button 
+                        variant={formData.alignment === 'center' ? "secondary" : "ghost"} 
+                        size="icon" className="h-8 flex-1"
+                        onClick={() => handleChange('alignment', 'center')}
+                      >
+                        <AlignCenter size={14} />
+                      </Button>
+                      <Button 
+                        variant={formData.alignment === 'right' ? "secondary" : "ghost"} 
+                        size="icon" className="h-8 flex-1"
+                        onClick={() => handleChange('alignment', 'right')}
+                      >
+                        <AlignRight size={14} />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">V-Align</Label>
+                    <Select
+                      value={formData.verticalAlignment}
+                      onValueChange={(val) => handleChange('verticalAlignment', val)}
+                    >
+                      <SelectTrigger className="bg-white border-slate-200 h-10">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="top">Top</SelectItem>
+                        <SelectItem value="middle">Middle</SelectItem>
+                        <SelectItem value="bottom">Bottom</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
             )}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">{currentAddField === 'links' ? 'URL' : 'Value'}</label>
-              <Input
-                value={newItemValue}
-                onChange={(e) => setNewItemValue(e.target.value)}
-                placeholder={`Enter ${currentAddField} ${currentAddField === 'links' ? 'URL' : 'value'}...`}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleAddItem();
-                  }
-                }}
+          </div>
+        )}
+      </div>
+
+      <div className="p-5 border-t bg-white flex gap-3 sticky bottom-0 z-10 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+        <Button 
+          variant="outline" 
+          onClick={onClose}
+          className="flex-1 border-slate-200 text-slate-600 hover:bg-slate-50"
+        >
+          Cancel
+        </Button>
+        <Button 
+          onClick={handleSave}
+          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200 transition-all active:scale-95"
+        >
+          Save Changes
+        </Button>
+      </div>
+
+      {/* Roles Manager Dialog */}
+      <Dialog open={showRolesManager} onOpenChange={setShowRolesManager}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+                <Users size={18} />
+              </div>
+              Manage Roles
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="flex gap-2">
+              <Input 
+                value={newRoleName}
+                onChange={(e) => setNewRoleName(e.target.value)}
+                placeholder="Enter role name (e.g. Developer)"
+                className="bg-slate-50 border-slate-200"
+                onKeyDown={(e) => e.key === 'Enter' && handleAddRole()}
               />
+              <Button onClick={handleAddRole} size="icon" className="bg-blue-600 hover:bg-blue-700">
+                <Plus size={18} />
+              </Button>
+            </div>
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+              {formData.roles?.length > 0 ? (
+                formData.roles.map((role: string, i: number) => (
+                  <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 group hover:border-blue-100 transition-all">
+                    <span className="text-sm font-semibold text-slate-700">{role}</span>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                      onClick={() => handleRemoveRole(i)}
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 border-2 border-dashed border-slate-100 rounded-xl">
+                  <p className="text-xs text-slate-400 italic">No roles added yet</p>
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddItem}>Add</Button>
+            <Button onClick={() => setShowRolesManager(false)} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <DialogContent className={cn(isWorkProduct && currentAddField === 'links' ? "sm:max-w-150" : "sm:max-w-106.25", "rounded-2xl")}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+                <LinkIcon size={18} />
+              </div>
+              {isWorkProduct && currentAddField === 'links' 
+                ? 'Add Resource Links' 
+                : `Add New ${currentAddField.charAt(0).toUpperCase() + currentAddField.slice(1)}`}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-6 space-y-6">
+            {isWorkProduct && currentAddField === 'links' ? (
+              <div className="grid gap-6">
+                {/* Template Section */}
+                <div className="space-y-4 p-4 border border-blue-100 rounded-2xl bg-blue-50/30">
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-blue-500 hover:bg-blue-600">Template</Badge>
+                    <span className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Optional</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Label</Label>
+                      <Input 
+                        value={templateLabel} 
+                        onChange={(e) => setTemplateLabel(e.target.value)} 
+                        placeholder="e.g. Design Template" 
+                        className="bg-white border-blue-100 focus:ring-blue-500/20"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-bold text-slate-400 uppercase ml-1">URL</Label>
+                      <Input 
+                        value={templateUrl} 
+                        onChange={(e) => setTemplateUrl(e.target.value)} 
+                        placeholder="https://..." 
+                        className="bg-white border-blue-100 focus:ring-blue-500/20"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Guidelines Section */}
+                <div className="space-y-4 p-4 border border-green-100 rounded-2xl bg-green-50/30">
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-green-500 hover:bg-green-600">Guidelines</Badge>
+                    <span className="text-[10px] text-green-400 font-bold uppercase tracking-widest">Optional</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Label</Label>
+                      <Input 
+                        value={guidelinesLabel} 
+                        onChange={(e) => setGuidelinesLabel(e.target.value)} 
+                        placeholder="e.g. Coding Standards" 
+                        className="bg-white border-green-100 focus:ring-green-500/20"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-bold text-slate-400 uppercase ml-1">URL</Label>
+                      <Input 
+                        value={guidelinesUrl} 
+                        onChange={(e) => setGuidelinesUrl(e.target.value)} 
+                        placeholder="https://..." 
+                        className="bg-white border-green-100 focus:ring-green-500/20"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Checklist Section */}
+                <div className="space-y-4 p-4 border border-purple-100 rounded-2xl bg-purple-50/30">
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-purple-500 hover:bg-purple-600">Checklist</Badge>
+                    <span className="text-[10px] text-purple-400 font-bold uppercase tracking-widest">Optional</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Label</Label>
+                      <Input 
+                        value={checklistLabel} 
+                        onChange={(e) => setChecklistLabel(e.target.value)} 
+                        placeholder="e.g. Review Checklist" 
+                        className="bg-white border-purple-100 focus:ring-purple-500/20"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-bold text-slate-400 uppercase ml-1">URL</Label>
+                      <Input 
+                        value={checklistUrl} 
+                        onChange={(e) => setChecklistUrl(e.target.value)} 
+                        placeholder="https://..." 
+                        className="bg-white border-purple-100 focus:ring-purple-500/20"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {currentAddField === 'links' && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Link Label</Label>
+                    <Input
+                      value={newLinkLabel}
+                      onChange={(e) => setNewLinkLabel(e.target.value)}
+                      placeholder="Enter label (e.g. Documentation)"
+                      className="bg-slate-50 border-slate-200"
+                    />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">
+                    {currentAddField === 'links' ? 'URL' : 'Value'}
+                  </Label>
+                  <Input
+                    value={newItemValue}
+                    onChange={(e) => setNewItemValue(e.target.value)}
+                    placeholder={`Enter ${currentAddField} ${currentAddField === 'links' ? 'URL' : 'value'}...`}
+                    className="bg-slate-50 border-slate-200"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleAddItem();
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setIsAddDialogOpen(false)} className="text-slate-500">Cancel</Button>
+            <Button onClick={handleAddItem} className="bg-blue-600 hover:bg-blue-700 text-white px-8">Add Resource</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

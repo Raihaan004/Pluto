@@ -1,9 +1,9 @@
 import { ClerkProvider } from '@clerk/nextjs'
 import { UserRoleProvider } from '@/context/UserRoleContext';
-import { HelpBot } from '@/components/HelpBot';
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { Toaster } from "sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,7 +33,7 @@ export default function RootLayout({
         >
           <UserRoleProvider>
             {children}
-            <HelpBot />
+            <Toaster position="top-right" richColors />
           </UserRoleProvider>
         </body>
       </html>

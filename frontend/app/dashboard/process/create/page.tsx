@@ -95,8 +95,10 @@ interface ProcessCanvasProps {
   setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
   users: any[];
   isReadOnly?: boolean;
+  isPublished?: boolean;
   projectId?: string | null;
   projectOwnerId?: string | null;
+  currentUser?: any;
   onInit?: (instance: any) => void;
   wrappedOnNodesChange?: OnNodesChange;
   wrappedOnEdgesChange?: OnEdgesChange;
@@ -120,8 +122,10 @@ const ProcessCanvas = ({
   setEdges,
   users,
   isReadOnly = false,
+  isPublished = false,
   projectId,
   projectOwnerId,
+  currentUser,
   onInit,
   wrappedOnNodesChange,
   wrappedOnEdgesChange,
@@ -198,9 +202,16 @@ const ProcessCanvas = ({
   );
 
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
-    if (isReadOnly) return;
+    if (isReadOnly) {
+      const isResponsible = node.data.responsibility?.includes(currentUser?.id);
+      const isSupport = node.data.support?.includes(currentUser?.id);
+      if (isResponsible || isSupport) {
+        setSelectedNode(node);
+      }
+      return;
+    }
     setSelectedNode(node);
-  }, [isReadOnly]);
+  }, [isReadOnly, currentUser]);
 
   const onNodeDragStop = useCallback(() => {
     if (isReadOnly) return;
@@ -219,7 +230,12 @@ const ProcessCanvas = ({
   const noOpConnect = useCallback(() => {}, []);
 
   const handleSaveProperties = (nodeId: string, newData: any) => {
-    if (isReadOnly) return;
+    if (isReadOnly) {
+      const node = nodes.find(n => n.id === nodeId);
+      const isResponsible = node?.data.responsibility?.includes(currentUser?.id);
+      const isSupport = node?.data.support?.includes(currentUser?.id);
+      if (!isResponsible && !isSupport) return;
+    }
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === nodeId) {
@@ -275,13 +291,14 @@ const ProcessCanvas = ({
             </ReactFlow>
       </div>
 
-      {selectedNode && !isReadOnly && selectedNode.type !== 'swimLane' && (
+      {selectedNode && selectedNode.type !== 'swimLane' && (!isReadOnly || (selectedNode.data.responsibility?.includes(currentUser?.id) || selectedNode.data.support?.includes(currentUser?.id))) && (
         <PropertiesPanel 
             selectedNode={selectedNode} 
             onSave={handleSaveProperties} 
             onClose={() => setSelectedNode(null)}
             projectId={projectId}
             projectOwnerId={projectOwnerId}
+            isPublished={isPublished}
         />
       )}
       
@@ -332,6 +349,9 @@ export default function CreateProcessPage() {
   const [editingProjectNameValue, setEditingProjectNameValue] = useState('');
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
   const [isSaveVersionDialogOpen, setIsSaveVersionDialogOpen] = useState(false);
+  const [isDeleteSheetDialogOpen, setIsDeleteSheetDialogOpen] = useState(false);
+  const [sheetToDelete, setSheetToDelete] = useState<string | null>(null);
+  const [isDeleteProjectDialogOpen, setIsDeleteProjectDialogOpen] = useState(false);
   const [newVersionName, setNewVersionName] = useState('');
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [editingSheetName, setEditingSheetName] = useState('');
@@ -369,11 +389,19 @@ export default function CreateProcessPage() {
 
   const handleDeleteSheet = (sheetId: string) => {
     if (sheetId === 'parent') return;
-    const updatedSheets = sheets.filter(s => s.id !== sheetId);
+    setSheetToDelete(sheetId);
+    setIsDeleteSheetDialogOpen(true);
+  };
+
+  const confirmDeleteSheet = () => {
+    if (!sheetToDelete) return;
+    const updatedSheets = sheets.filter(s => s.id !== sheetToDelete);
     setSheets(updatedSheets);
-    if (activeSheetId === sheetId) {
+    if (activeSheetId === sheetToDelete) {
       handleSwitchSheet('parent', updatedSheets);
     }
+    setIsDeleteSheetDialogOpen(false);
+    setSheetToDelete(null);
   };
 
   const handleSwitchSheet = (sheetId: string, sheetsArray?: ProcessSheet[]) => {
@@ -438,8 +466,8 @@ export default function CreateProcessPage() {
   }, [projectId, projectPermission, projectStatus]);
 
   const canUnlock = useMemo(() => {
-    return role === 'admin' || projectPermission === 'owner' || projectPermission === 'editor';
-  }, [role, projectPermission]);
+    return role === 'admin';
+  }, [role]);
 
   const onConnect = useCallback((params: any) => {
     const isRed = edgeStyle === 'red-dashed';
@@ -1020,20 +1048,32 @@ export default function CreateProcessPage() {
     }
   }, [user?.id, isReadOnly, sheets, activeSheetId, nodes, edges, projectName, processId, router]);
 
-  const handleDeleteProject = useCallback(async () => {
-    if (!projectId || isReadOnly) return;
-    if (!confirm('Are you sure you want to delete this project? This action cannot be undone.')) return;
+  const handleDelete = useCallback(() => {
+    if ((!projectId && !processId) || isReadOnly) return;
+    setIsDeleteProjectDialogOpen(true);
+  }, [projectId, processId, isReadOnly]);
+
+  const confirmDelete = useCallback(async () => {
+    if (isReadOnly) return;
     
     try {
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/projects/${projectId}`, {
-        headers: { "X-Clerk-User-Id": user?.id }
-      });
-      router.push('/dashboard/projects');
+      if (projectId) {
+        await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/projects/${projectId}`, {
+          headers: { "X-Clerk-User-Id": user?.id }
+        });
+        router.push('/dashboard/projects');
+      } else if (processId) {
+        await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/processes/${processId}`, {
+          headers: { "X-Clerk-User-Id": user?.id }
+        });
+        router.push('/dashboard/process');
+      }
+      setIsDeleteProjectDialogOpen(false);
     } catch (error) {
-      console.error('Failed to delete project:', error);
-      alert('Failed to delete project');
+      console.error('Failed to delete:', error);
+      alert('Failed to delete');
     }
-  }, [projectId, isReadOnly, user, router]);
+  }, [projectId, processId, isReadOnly, user, router]);
 
   const handleUpdateCollaborators = useCallback(async () => {
     // Reload collaborators without full data reload for better performance
@@ -1351,10 +1391,10 @@ export default function CreateProcessPage() {
             <Redo size={18} className="text-gray-600" />
           </button>
           <button
-            onClick={handleDeleteProject}
-            disabled={!projectId || isReadOnly}
+            onClick={handleDelete}
+            disabled={(!projectId && !processId) || isReadOnly}
             className="p-2 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Delete Project"
+            title={projectId ? "Delete Project" : "Delete Process"}
           >
             <Trash2 size={18} className="text-red-600" />
           </button>
@@ -1452,8 +1492,10 @@ export default function CreateProcessPage() {
             setEdges={setEdges}
             users={users}
             isReadOnly={isReadOnly}
+            isPublished={projectStatus === 'published'}
             projectId={projectId}
             projectOwnerId={projectOwnerId}
+            currentUser={user}
             onInit={setRfInstance}
             wrappedOnNodesChange={wrappedOnNodesChange}
             wrappedOnEdgesChange={wrappedOnEdgesChange}
@@ -1570,6 +1612,46 @@ export default function CreateProcessPage() {
             className="bg-green-600 hover:bg-green-700 text-white"
           >
             {isSaving ? 'Saving...' : 'Save Version'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={isDeleteSheetDialogOpen} onOpenChange={setIsDeleteSheetDialogOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete Sheet</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete this sheet? This action cannot be undone and all nodes and edges in this sheet will be permanently removed.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsDeleteSheetDialogOpen(false)}>Cancel</Button>
+          <Button 
+            onClick={confirmDeleteSheet}
+            className="bg-red-600 hover:bg-red-700 text-white"
+          >
+            Delete
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={isDeleteProjectDialogOpen} onOpenChange={setIsDeleteProjectDialogOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete {projectId ? 'Project' : 'Process'}</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete this {projectId ? 'project' : 'process'}? This action cannot be undone and all data associated with it will be permanently removed.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsDeleteProjectDialogOpen(false)}>Cancel</Button>
+          <Button 
+            onClick={confirmDelete}
+            className="bg-red-600 hover:bg-red-700 text-white"
+          >
+            Delete
           </Button>
         </DialogFooter>
       </DialogContent>
