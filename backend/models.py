@@ -16,18 +16,6 @@ class User(UserCreate):
 class RoleUpdate(BaseModel):
     role: str
 
-class NotificationCreate(BaseModel):
-    user_id: str  # clerk_id of the recipient
-    type: str
-    title: str
-    message: str
-    read: bool = False
-    metadata: Optional[dict] = None
-
-class Notification(NotificationCreate):
-    id: int
-    created_at: str
-
 class ProcessSheet(BaseModel):
     id: str
     name: str

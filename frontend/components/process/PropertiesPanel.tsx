@@ -356,7 +356,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
     const newSupport = formData.support || [];
     const newlyAssignedSupport = newSupport.filter((id: string) => !oldSupport.includes(id));
 
-    // 2. Process new assignments (Add as collaborator + Send notification)
+    // 2. Process new assignments (Add as collaborator)
     const processAssignments = async (userIds: string[], roleType: string) => {
       for (const userId of userIds) {
         try {
@@ -367,43 +367,6 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
               role: 'editor'
             });
           }
-
-          // Send notification
-          let projectName = 'Untitled Project';
-          let projectVersion = null;
-          if (projectId) {
-            try {
-              const projectRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/project/${projectId}`);
-              if (projectRes.data) {
-                projectName = projectRes.data.name || 'Untitled Project';
-                projectVersion = projectRes.data.version_name || null;
-              }
-            } catch (error) {
-              console.error('Error fetching project details for notification:', error);
-            }
-          }
-
-          await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/notifications`, {
-            user_id: userId,
-            type: 'info',
-            title: `New ${roleType} Assignment`,
-            message: `In project "${projectName}" in node "${formData.label || 'Untitled'}" you have been assigned as ${roleType} by ${user?.fullName || user?.primaryEmailAddress?.emailAddress}.`,
-            read: false,
-            metadata: {
-                project_id: projectId,
-                role: 'editor',
-                node_id: selectedNode.id,
-                node_label: formData.label || 'Untitled',
-                project_name: projectName,
-                project_version: projectVersion,
-                node_status: formData.state || 'Draft',
-                deadline: formData.deadline || null,
-                description: formData.description || null,
-                assigned_by_id: user?.id || null,
-                assigned_by_name: user?.fullName || user?.primaryEmailAddress?.emailAddress || 'System',
-                assigned_by_email: user?.primaryEmailAddress?.emailAddress || ''
-            }
-          });
         } catch (error) {
           console.error(`Error processing assignment for ${userId}:`, error);
         }

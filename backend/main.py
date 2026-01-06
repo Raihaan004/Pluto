@@ -2,10 +2,9 @@ from fastapi import FastAPI, HTTPException, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from database import supabase
-from models import UserCreate, RoleUpdate, NotificationCreate, ProcessPackageCreate, ProcessRename, ProcessVersionCreate, ProjectCreate, ProjectUpdate, CollaboratorAdd
+from models import UserCreate, RoleUpdate, ProcessPackageCreate, ProcessRename, ProcessVersionCreate, ProjectCreate, ProjectUpdate, CollaboratorAdd
 from typing import Optional
 from datetime import datetime
-from email_service import send_email, create_assignment_email_html, create_assignment_email_text
 
 import os
 from dotenv import load_dotenv
@@ -142,228 +141,6 @@ def update_user_role(target_clerk_id: str, role_update: RoleUpdate, requester_id
         return {"status": "updated", "data": data.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/notifications")
-def create_notification(notification: NotificationCreate):
-    try:
-        data = notification.model_dump()
-        response = supabase.table("notifications").insert(data).execute()
-        
-        # Send email if this is a role/responsibility assignment notification
-        metadata = notification.metadata or {}
-        if metadata.get("node_id") and metadata.get("project_id"):
-            try:
-                print(f"Attempting to send email for notification to user {notification.user_id}")
-                # Get recipient user details
-                recipient_res = supabase.table("users").select("email, first_name, last_name").eq("clerk_id", notification.user_id).execute()
-                if recipient_res.data:
-                    recipient = recipient_res.data[0]
-                    recipient_email = recipient.get("email")
-                    recipient_name = f"{recipient.get('first_name', '')} {recipient.get('last_name', '')}".strip() or recipient_email
-                    
-                    # Get project details
-                    project_res = supabase.table("projects").select("name, version_name, user_id").eq("id", metadata.get("project_id")).execute()
-                    project = project_res.data[0] if project_res.data else None
-                    
-                    # Get assigned by user details
-                    assigned_by_id = metadata.get("assigned_by_id")
-                    assigned_by_name = metadata.get("assigned_by_name", "System")
-                    assigned_by_email = metadata.get("assigned_by_email", "")
-                    
-                    if assigned_by_id:
-                        assigned_by_res = supabase.table("users").select("email, first_name, last_name").eq("clerk_id", assigned_by_id).execute()
-                        if assigned_by_res.data:
-                            assigned_by_user = assigned_by_res.data[0]
-                            assigned_by_name = f"{assigned_by_user.get('first_name', '')} {assigned_by_user.get('last_name', '')}".strip() or assigned_by_user.get("email", "")
-                            assigned_by_email = assigned_by_user.get("email", "")
-                    
-                    if recipient_email and project:
-                        # Determine role type from notification message or metadata
-                        role_type = "Responsible"
-                        if "Support" in notification.message or "support" in notification.message.lower():
-                            role_type = "Support"
-                        elif "Responsible" in notification.message or "responsible" in notification.message.lower():
-                            role_type = "Responsible"
-                        
-                        # Get node details from metadata
-                        work_product = metadata.get("node_label", notification.message.split('"')[1] if '"' in notification.message else "Untitled")
-                        node_status = metadata.get("node_status", "None")
-                        deadline = metadata.get("deadline")
-                        # Format deadline if it's a date string
-                        if deadline:
-                            try:
-                                from datetime import datetime
-                                if isinstance(deadline, str):
-                                    deadline_date = datetime.fromisoformat(deadline.replace('Z', '+00:00'))
-                                    deadline = deadline_date.strftime("%B %d, %Y")
-                            except:
-                                pass  # Keep original format if parsing fails
-                        description = metadata.get("description")
-                        
-                        # Create and send email
-                        subject = f"New {role_type} Assignment - {project.get('name', 'Project')}"
-                        html_body = create_assignment_email_html(
-                            recipient_name=recipient_name,
-                            role_type=role_type,
-                            project_name=project.get("name", "Untitled Project"),
-                            work_product=work_product,
-                            assigned_by_name=assigned_by_name,
-                            assigned_by_email=assigned_by_email,
-                            project_id=project.get("id"),
-                            project_version=project.get("version_name"),
-                            node_status=node_status,
-                            deadline=deadline,
-                            description=description
-                        )
-                        text_body = create_assignment_email_text(
-                            recipient_name=recipient_name,
-                            role_type=role_type,
-                            project_name=project.get("name", "Untitled Project"),
-                            work_product=work_product,
-                            assigned_by_name=assigned_by_name,
-                            assigned_by_email=assigned_by_email,
-                            project_id=project.get("id"),
-                            project_version=project.get("version_name"),
-                            node_status=node_status,
-                            deadline=deadline,
-                            description=description
-                        )
-                        
-                        print(f"Sending email to {recipient_email}")
-                        send_email(recipient_email, subject, html_body, text_body)
-                    else:
-                        print(f"Skipping email: recipient_email={recipient_email}, project={project}")
-                else:
-                    print(f"Recipient not found for user_id {notification.user_id}")
-            except Exception as email_error:
-                # Don't fail the notification creation if email fails
-                print(f"Error sending email notification: {email_error}")
-                import traceback
-                traceback.print_exc()
-        
-        return {"status": "created", "data": response.data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/dashboard-stats/{clerk_id}")
-def get_dashboard_stats(clerk_id: str):
-    try:
-        # 1. Fetch recent notifications
-        notif_response = supabase.table("notifications").select("*").eq("user_id", clerk_id).order("created_at", desc=True).limit(5).execute()
-        notifications = notif_response.data if notif_response.data else []
-
-        # 2. Fetch projects count (where user is owner or collaborator)
-        # Get all projects to check collaborators and ownership
-        # We need 'user_id' to check ownership and 'collaborators' to check collaboration
-        all_projects_response = supabase.table("projects").select("id, name, user_id, collaborators, sheets, progress, updated_at, version_name").execute()
-        all_projects = all_projects_response.data if all_projects_response.data else []
-        
-        user_projects = []
-        tasks_assigned = 0
-        upcoming_deadlines = 0
-        
-        from datetime import datetime, timedelta, timezone
-        now = datetime.now(timezone.utc)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        next_week = today_start + timedelta(days=7)
-        
-        # Set to track unique task IDs to avoid double counting
-        assigned_task_ids = set()
-
-        for project in all_projects:
-            # Check Project Ownership/Collaboration
-            is_owner = project.get("user_id") == clerk_id
-            collaborators = project.get("collaborators", [])
-            is_collaborator = any(c.get("user_id") == clerk_id for c in collaborators)
-            
-            # Check if user is assigned to any node in this project
-            is_assigned_to_any_node = False
-            sheets = project.get("sheets", [])
-            for sheet in sheets:
-                nodes = sheet.get("nodes", [])
-                for node in nodes:
-                    data = node.get("data", {})
-                    if clerk_id in data.get("responsibility", []) or clerk_id in data.get("support", []):
-                        is_assigned_to_any_node = True
-                        break
-                if is_assigned_to_any_node:
-                    break
-
-            if is_owner or is_collaborator or is_assigned_to_any_node:
-                # Calculate automatic progress (Green Bar)
-                # Based on nodes assigned to the user where state != 'Draft'
-                assigned_nodes = 0
-                changed_nodes = 0
-                for sheet in sheets:
-                    nodes = sheet.get("nodes", [])
-                    for node in nodes:
-                        data = node.get("data", {})
-                        responsibility = data.get("responsibility", [])
-                        support = data.get("support", [])
-                        
-                        is_assigned = clerk_id in responsibility or clerk_id in support
-                        if is_assigned:
-                            assigned_nodes += 1
-                            # Check if state has changed from 'Draft' or 'None'
-                            node_state = data.get("state") or data.get("status") or "None"
-                            if node_state not in ["Draft", "None"]:
-                                changed_nodes += 1
-                            
-                            # Check Tasks Assigned
-                            project_id = project.get("id", "unknown")
-                            node_id = node.get("id", "unknown")
-                            assigned_task_ids.add(f"{project_id}_{node_id}")
-
-                            # Check for upcoming deadlines ONLY for assigned tasks
-                            deadline_str = data.get("deadline")
-                            if deadline_str:
-                                try:
-                                    deadline = datetime.fromisoformat(deadline_str.replace('Z', '+00:00'))
-                                    if deadline.tzinfo is None:
-                                        deadline = deadline.replace(tzinfo=timezone.utc)
-                                    
-                                    if today_start <= deadline <= next_week:
-                                        upcoming_deadlines += 1
-                                except:
-                                    continue
-                
-                manual_progress = project.get("progress", 0)
-                if assigned_nodes > 0:
-                    # Green Bar increases until it matches the Blue Bar
-                    auto_progress = (changed_nodes / assigned_nodes) * manual_progress
-                else:
-                    auto_progress = 0
-
-                user_projects.append({
-                    "id": project["id"],
-                    "name": project["name"],
-                    "version_name": project.get("version_name", "v1.0"),
-                    "progress": manual_progress, # Manual (Blue Bar)
-                    "auto_progress": round(auto_progress), # Automatic (Green Bar)
-                    "updated_at": project["updated_at"]
-                })
-
-        tasks_assigned = len(assigned_task_ids)
-        
-        # Sort user projects by updated_at and take top 5
-        user_projects.sort(key=lambda x: x["updated_at"], reverse=True)
-        top_projects = user_projects[:5]
-
-        return {
-            "tasks_assigned": tasks_assigned,
-            "upcoming_deadlines": upcoming_deadlines,
-            "notifications": notifications,
-            "projects": top_projects
-        }
-    except Exception as e:
-        print(f"Error fetching dashboard stats: {e}")
-        # Return empty structure on error to prevent frontend crash
-        return {
-            "tasks_assigned": 0,
-            "upcoming_deadlines": 0,
-            "notifications": [],
-            "projects": []
-        }
 
 @app.post("/processes")
 def create_process(process: ProcessPackageCreate):
@@ -552,141 +329,6 @@ def create_project(project: ProjectCreate):
         print(f"Error creating project: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/tasks/{user_id}")
-def get_user_tasks(user_id: str):
-    try:
-        # Fetch all projects to scan for node assignments
-        # In production, this should be optimized with a JSONB query
-        response = supabase.table("projects").select("*").execute()
-        projects = response.data
-        
-        tasks = []
-        
-        for project in projects:
-            sheets = project.get("sheets", [])
-            # Handle case where sheets might be None or empty
-            if not sheets:
-                continue
-                
-            for sheet in sheets:
-                nodes = sheet.get("nodes", [])
-                for node in nodes:
-                    data = node.get("data", {})
-                    responsibility = data.get("responsibility", [])
-                    support = data.get("support", [])
-                    
-                    # Ensure lists
-                    if not isinstance(responsibility, list): responsibility = []
-                    if not isinstance(support, list): support = []
-                    
-                    # Check if user is assigned
-                    is_responsible = user_id in responsibility
-                    is_support = user_id in support
-                    
-                    if is_responsible or is_support:
-                        # Determine role name
-                        role = "Responsible" if is_responsible else "Support"
-                        
-                        task = {
-                            "project_id": project["id"],
-                            "project_name": project["name"],
-                            "work_product": data.get("label", "Untitled Node"),
-                            "version": project.get("version_name", "1.0"),
-                            "author_id": project["user_id"],
-                            "status": data.get("state", "None"),
-                            "verification_reviewers": support, # List of support user IDs
-                            "verification_comments": data.get("verificationComments", ""),
-                            "author_comments": data.get("authorComments", ""),
-                            "assigned_role": role,
-                            "created_at": project.get("created_at", ""),
-                            "node_id": node.get("id"),  # Store node ID for clearing
-                            "sheet_index": sheets.index(sheet)  # Store sheet index for clearing
-                        }
-                        tasks.append(task)
-                        
-        return tasks
-    except Exception as e:
-        print(f"Error fetching tasks: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.delete("/tasks/{user_id}")
-def clear_task(
-    user_id: str,
-    project_id: int = Query(...),
-    node_id: str = Query(...),
-    sheet_index: int = Query(...)
-):
-    try:
-        # Fetch the project
-        response = supabase.table("projects").select("*").eq("id", project_id).execute()
-        if not response.data:
-            raise HTTPException(status_code=404, detail="Project not found")
-        
-        project = response.data[0]
-        sheets = project.get("sheets", [])
-        
-        if sheet_index >= len(sheets):
-            raise HTTPException(status_code=404, detail="Sheet not found")
-        
-        sheet = sheets[sheet_index]
-        nodes = sheet.get("nodes", [])
-        
-        # Find the node
-        node = None
-        node_index = None
-        for idx, n in enumerate(nodes):
-            if n.get("id") == node_id:
-                node = n
-                node_index = idx
-                break
-        
-        if not node:
-            raise HTTPException(status_code=404, detail="Node not found")
-        
-        # Remove user from responsibility or support
-        data = node.get("data", {})
-        responsibility = data.get("responsibility", [])
-        support = data.get("support", [])
-        
-        # Ensure lists
-        if not isinstance(responsibility, list): responsibility = []
-        if not isinstance(support, list): support = []
-        
-        # Remove user from both arrays
-        updated_responsibility = [uid for uid in responsibility if uid != user_id]
-        updated_support = [uid for uid in support if uid != user_id]
-        
-        # Update the node data
-        data["responsibility"] = updated_responsibility
-        data["support"] = updated_support
-        
-        # Remove deadline when task is marked as completed
-        data["deadline"] = None
-        
-        node["data"] = data
-        
-        # Update the nodes array
-        nodes[node_index] = node
-        sheet["nodes"] = nodes
-        
-        # Update the sheets array
-        sheets[sheet_index] = sheet
-        
-        # Update the project
-        response = supabase.table("projects").update({
-            "sheets": sheets,
-            "updated_at": "now()"
-        }).eq("id", project_id).execute()
-        
-        return {"status": "cleared", "data": response.data}
-    except Exception as e:
-        print(f"Error clearing task: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/projects/{user_id}")
 def get_projects(user_id: str):
     try:
@@ -806,7 +448,14 @@ def get_all_projects(requester_id: Optional[str] = Header(None, alias="X-Clerk-U
     if not requester_id:
         raise HTTPException(status_code=401, detail="Missing user ID header")
         
-    # Ch
+    # Check if requester is admin
+    requester = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
+    if not requester.data or requester.data[0]["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    try:
+        response = supabase.table("projects").select("*").order("created_at", desc=True).execute()
+        
         # Optimize payload: Remove heavy 'sheets' data
         cleaned_data = []
         for project in response.data:
@@ -814,14 +463,7 @@ def get_all_projects(requester_id: Optional[str] = Header(None, alias="X-Clerk-U
             p.pop("sheets", None)
             cleaned_data.append(p)
             
-        return cleaned_ is admin
-    requester = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
-    if not requester.data or requester.data[0]["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    try:
-        response = supabase.table("projects").select("*").order("created_at", desc=True).execute()
-        return response.data
+        return cleaned_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -884,101 +526,6 @@ def delete_project(project_id: int, requester_id: Optional[str] = Header(None, a
         raise he
     except Exception as e:
         print(f"Error deleting project: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/notifications/{user_id}")
-def get_notifications(user_id: str):
-    try:
-        response = supabase.table("notifications").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
-        return response.data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.put("/notifications/{notification_id}/read")
-def mark_notification_read(notification_id: int):
-    try:
-        response = supabase.table("notifications").update({"read": True}).eq("id", notification_id).execute()
-        return {"status": "updated", "data": response.data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/notifications/{notification_id}/accept")
-def accept_notification(notification_id: int):
-    try:
-        # 1. Get the notification
-        notif_res = supabase.table("notifications").select("*").eq("id", notification_id).execute()
-        if not notif_res.data:
-            raise HTTPException(status_code=404, detail="Notification not found")
-        
-        notification = notif_res.data[0]
-        metadata = notification.get("metadata") or {}
-        project_id = metadata.get("project_id")
-        role = metadata.get("role", "viewer")
-        user_id = notification["user_id"] # The recipient of the notification
-
-        if not project_id:
-             raise HTTPException(status_code=400, detail="Invalid notification: missing project_id")
-
-        # 2. Add user as collaborator to the project
-        # Fetch current project
-        project_res = supabase.table("projects").select("collaborators").eq("id", project_id).execute()
-        if not project_res.data:
-            raise HTTPException(status_code=404, detail="Project not found")
-            
-        current_collaborators = project_res.data[0].get("collaborators") or []
-        
-        # Check if already exists
-        exists = False
-        for c in current_collaborators:
-            if c["user_id"] == user_id:
-                c["role"] = role # Update role
-                exists = True
-                break
-        
-        if not exists:
-            current_collaborators.append({"user_id": user_id, "role": role})
-            
-        # Update project
-        supabase.table("projects").update({"collaborators": current_collaborators}).eq("id", project_id).execute()
-
-        # 3. Mark notification as read
-        supabase.table("notifications").update({"read": True}).eq("id", notification_id).execute()
-
-        return {"status": "accepted"}
-    except Exception as e:
-        print(f"Error accepting notification: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/notifications/{notification_id}/reject")
-def reject_notification(notification_id: int):
-    try:
-        # Just mark as read for now, or delete
-        supabase.table("notifications").update({"read": True}).eq("id", notification_id).execute()
-        return {"status": "rejected"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.delete("/notifications/{notification_id}")
-def delete_notification(notification_id: int):
-    try:
-        # Check if notification exists first
-        check_response = supabase.table("notifications").select("id").eq("id", notification_id).execute()
-        if not check_response.data:
-            raise HTTPException(status_code=404, detail="Notification not found")
-        
-        # Delete the notification
-        response = supabase.table("notifications").delete().eq("id", notification_id).execute()
-        
-        # Supabase delete returns empty list [] on success, so check if response exists
-        # If we got here without exception, deletion was successful
-        return {"status": "deleted", "data": response.data if response.data else []}
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error deleting notification: {e}")
-        import traceback
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 

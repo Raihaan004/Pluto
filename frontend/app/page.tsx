@@ -34,16 +34,7 @@ const features = [
     href: "/dashboard/help",
     cta: "Learn Standards",
     background: <div className="absolute -right-20 -top-20 opacity-60" />,
-    className: "lg:col-span-2 lg:row-span-1",
-  },
-  {
-    Icon: Zap,
-    name: "Instant Notifications",
-    description: "Stay updated with real-time alerts for task assignments, project updates, and deadlines.",
-    href: "/dashboard/notifications",
-    cta: "View Alerts",
-    background: <div className="absolute -right-20 -top-20 opacity-60" />,
-    className: "lg:col-span-1 lg:row-span-1",
+    className: "lg:col-span-3 lg:row-span-1",
   },
 ];
 
@@ -167,7 +158,7 @@ export default function LandingPage() {
           </SignedOut>
           <SignedIn>
             <Button variant="ghost" className="text-gray-700 hover:text-blue-600" asChild>
-              <Link href="/dashboard">Dashboard</Link>
+              <Link href="/dashboard/process">Process</Link>
             </Button>
             <UserButton />
           </SignedIn>
@@ -177,10 +168,6 @@ export default function LandingPage() {
       <main className="flex-1 z-10">
         {/* Hero Section */}
         <section className="relative pt-20 pb-32 px-6 lg:px-12 flex flex-col items-center text-center">
-          <div className="inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium bg-blue-50 text-blue-600 mb-6">
-            <span className="flex h-2 w-2 rounded-full bg-blue-600 mr-2"></span>
-            New: Advanced Analytics Dashboard
-          </div>
           
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-gray-900 mb-6 max-w-4xl">
             Streamline Your <br />
@@ -203,8 +190,8 @@ export default function LandingPage() {
             </SignedOut>
             <SignedIn>
               <Button size="lg" className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-full px-8 h-12 text-lg shadow-lg hover:shadow-xl transition-all" asChild>
-                <Link href="/dashboard">
-                  Go to Dashboard <ArrowRight className="ml-2 h-5 w-5" />
+                <Link href="/dashboard/process">
+                  Go to Process <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
               </Button>
             </SignedIn>
@@ -292,8 +279,8 @@ export default function LandingPage() {
                 </SignedOut>
                 <SignedIn>
                     <Button size="lg" className="bg-white text-gray-900 hover:bg-gray-100 rounded-full px-8 h-12 text-lg font-semibold" asChild>
-                        <Link href="/dashboard">
-                            Go to Dashboard
+                        <Link href="/dashboard/process">
+                            Go to Process
                         </Link>
                     </Button>
                 </SignedIn>

@@ -57,6 +57,16 @@ function ProjectAccessDialog({ project, users, onUpdate }: { project: Project, u
     }
   }
 
+  const handleRemoveCollaborator = async (userId: string) => {
+    try {
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/projects/${project.id}/collaborators/${userId}`)
+      onUpdate()
+    } catch (error) {
+      console.error("Failed to remove collaborator:", error)
+      alert("Failed to remove collaborator")
+    }
+  }
+
   const collaborators = project.collaborators || []
 
   return (
@@ -100,6 +110,7 @@ function ProjectAccessDialog({ project, users, onUpdate }: { project: Project, u
                 <SelectContent>
                   <SelectItem value="viewer">Viewer</SelectItem>
                   <SelectItem value="editor">Editor</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -117,7 +128,7 @@ function ProjectAccessDialog({ project, users, onUpdate }: { project: Project, u
                   {users.find(u => u.clerk_id === project.user_id)?.email || project.user_id}
                 </span>
               </div>
-              {collaborators.map((c, i) => {
+              {collaborators.filter(c => c.user_id !== project.user_id).map((c, i) => {
                 const user = users.find(u => u.clerk_id === c.user_id)
                 return (
                   <div key={i} className="flex items-center justify-between text-sm p-2 border rounded">
@@ -126,9 +137,21 @@ function ProjectAccessDialog({ project, users, onUpdate }: { project: Project, u
                       <span className="text-xs text-muted-foreground">{user?.email}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2 py-1 rounded-full ${c.role === 'editor' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        c.role === 'admin' ? 'bg-red-100 text-red-800' :
+                        c.role === 'editor' ? 'bg-blue-100 text-blue-800' : 
+                        'bg-gray-100 text-gray-800'
+                      }`}>
                         {c.role}
                       </span>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-red-600"
+                        onClick={() => handleRemoveCollaborator(c.user_id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   </div>
                 )
@@ -139,6 +162,137 @@ function ProjectAccessDialog({ project, users, onUpdate }: { project: Project, u
             </div>
           </div>
         </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { targetUser?: User, users: User[], projects: Project[], onUpdate: () => void }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [selectedUserId, setSelectedUserId] = useState(targetUser?.clerk_id || "")
+  const [selectedProjectId, setSelectedProjectId] = useState("")
+  const [selectedRole, setSelectedRole] = useState("viewer")
+  const [isAdding, setIsAdding] = useState(false)
+
+  // Reset state when targetUser changes or dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedUserId(targetUser?.clerk_id || "")
+      setSelectedProjectId("")
+      setSelectedRole("viewer")
+    }
+  }, [isOpen, targetUser])
+
+  const handleAddProject = async () => {
+    if (!selectedProjectId || !selectedUserId) return
+    setIsAdding(true)
+    try {
+      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/projects/${selectedProjectId}/collaborators`, {
+        user_id: selectedUserId,
+        role: selectedRole
+      })
+      onUpdate()
+      setIsOpen(false)
+    } catch (error) {
+      console.error("Failed to add user to project:", error)
+      alert("Failed to add user to project")
+    } finally {
+      setIsAdding(false)
+    }
+  }
+
+  // Filter projects where selected user is not already a member
+  const availableProjects = projects.filter(p => {
+    if (!selectedUserId) return true;
+    return p.user_id !== selectedUserId && 
+           !p.collaborators?.some(c => c.user_id === selectedUserId);
+  })
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        {targetUser ? (
+          <Button variant="outline" size="sm" className="h-8 gap-1 border-blue-200 hover:border-blue-300 hover:bg-blue-50 text-blue-600 transition-all">
+            <Plus className="h-3.5 w-3.5" />
+            Add to Project
+          </Button>
+        ) : (
+          <Button className="bg-blue-600 hover:bg-blue-700">
+            <Plus className="h-4 w-4 mr-2" />
+            Add Project to User
+          </Button>
+        )}
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>{targetUser ? "Assign to Project" : "Assign User to Project"}</DialogTitle>
+          <DialogDescription>
+            {targetUser ? (
+              <>Assign <strong>{targetUser.first_name} {targetUser.last_name}</strong> to an existing project.</>
+            ) : (
+              "Select a user and a project to create a new assignment."
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="grid gap-4 py-4">
+          {!targetUser && (
+            <div className="grid gap-2">
+              <Label htmlFor="user">User</Label>
+              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a user..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {users.map(u => (
+                    <SelectItem key={u.clerk_id} value={u.clerk_id}>
+                      {u.first_name} {u.last_name} ({u.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="grid gap-2">
+            <Label htmlFor="project">Project</Label>
+            <Select value={selectedProjectId} onValueChange={setSelectedProjectId} disabled={!selectedUserId}>
+              <SelectTrigger>
+                <SelectValue placeholder={selectedUserId ? "Select a project..." : "Select a user first"} />
+              </SelectTrigger>
+              <SelectContent>
+                {availableProjects.length > 0 ? (
+                  availableProjects.map(p => (
+                    <SelectItem key={p.id} value={p.id.toString()}>
+                      {p.name} ({p.version_name})
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="none" disabled>No available projects</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="role">Role</Label>
+            <Select value={selectedRole} onValueChange={setSelectedRole}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="viewer">Viewer</SelectItem>
+                <SelectItem value="editor">Editor</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
+          <Button onClick={handleAddProject} disabled={!selectedProjectId || !selectedUserId || isAdding} className="bg-blue-600 hover:bg-blue-700">
+            {isAdding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
+            Assign User
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
@@ -223,9 +377,12 @@ export default function AdminPage() {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>User Management</CardTitle>
-          <CardDescription>View and update user roles.</CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-7">
+          <div className="flex flex-col gap-1">
+            <CardTitle>User Management</CardTitle>
+            <CardDescription>View and update user roles.</CardDescription>
+          </div>
+          <ProjectAssignmentDialog users={users} projects={projects} onUpdate={fetchData} />
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -268,6 +425,7 @@ export default function AdminPage() {
                                   <span>{p.name} <span className="text-muted-foreground">({p.version_name})</span></span>
                                   <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${
                                     isOwner ? 'bg-blue-50 text-blue-700 border-blue-200' : 
+                                    role === 'admin' ? 'bg-red-50 text-red-700 border-red-200' :
                                     role === 'editor' ? 'bg-amber-50 text-amber-700 border-amber-200' : 
                                     'bg-slate-50 text-slate-700 border-slate-200'
                                   }`}>
@@ -295,7 +453,8 @@ export default function AdminPage() {
                         </span>
                       </td>
                       <td className="p-4 align-middle">
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 items-center justify-end">
+
                           <select 
                             className="h-9 w-[120px] rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                             value={u.role}

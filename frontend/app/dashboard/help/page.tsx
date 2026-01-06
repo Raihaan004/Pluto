@@ -27,7 +27,7 @@ export default function HelpPage() {
       color: "text-blue-500",
       content: [
         { title: "Creating your first project", text: "Click the 'Projects' tab and then 'Create New Project'. Choose a name and a process template to begin." },
-        { title: "Navigating the Dashboard", text: "The dashboard gives you an overview of your active projects, recent tasks, and upcoming deadlines." },
+        { title: "Managing Processes", text: "Design your functional safety workflows in the 'Process' tab. These serve as the master templates for your projects." },
         { title: "Understanding the Workspace", text: "Pluto is divided into Processes (templates) and Projects (instances of processes)." }
       ]
     },
@@ -50,9 +50,9 @@ export default function HelpPage() {
       icon: Users,
       color: "text-purple-500",
       content: [
-        { title: "Roles & Permissions", text: "Admins can manage users. Editors can modify projects. Viewers can only see content." },
+        { title: "Roles & Permissions", text: "Admins can manage both global user roles and project-specific assignments via the Admin Console." },
         { title: "Assigning Responsibilities", text: "In the project editor, select a node and use the Properties Panel to assign a responsible user." },
-        { title: "Collaborating", text: "Invite team members to your project via the 'Share' button in the project header." }
+        { title: "Collaborating", text: "Invite team members to your project via the 'Share' button in the project header or the 'Add Project to User' feature in Admin Console." }
       ]
     }
   ]
@@ -64,7 +64,7 @@ export default function HelpPage() {
     },
     {
       question: "How do I assign roles to users?",
-      answer: "Go to the 'Admin' section (only available for Admins). Find the user in the list and use the dropdown menu to change their role to Viewer, Editor, or Admin."
+      answer: "Go to the 'Admin Console' (only available for Admins). You can change a user's global role (Viewer, Editor, Admin) using the dropdown, or use the 'Add Project to User' button in the header to assign them to specific projects with custom permissions."
     },
     {
       question: "What is a Process Version?",
@@ -73,10 +73,6 @@ export default function HelpPage() {
     {
       question: "Can I delete a project?",
       answer: "Yes, you can delete a project from the Projects page. Click the trash icon on the project card. Please note that this action cannot be undone."
-    },
-    {
-      question: "How do notifications work?",
-      answer: "You receive notifications when you are assigned a responsibility in a process or when important updates occur. Check the bell icon in the sidebar or the Notifications page."
     },
     {
       question: "How do I export my process?",

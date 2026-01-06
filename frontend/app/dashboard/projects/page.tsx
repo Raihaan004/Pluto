@@ -297,6 +297,9 @@ export default function ProjectsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {projects.map((project) => {
                 const projectUsers = getProjectCollaborators(project);
+                const isOwner = project.user_id === user?.id;
+                const collaborator = project.collaborators?.find(c => (c.user_id || c.clerk_id) === user?.id);
+                const userRole = isOwner ? 'owner' : (collaborator?.role || 'viewer');
                 
                 return (
                   <div 
@@ -311,10 +314,18 @@ export default function ProjectsPage() {
                             <Folder className="h-5 w-5 text-blue-600" />
                           </div>
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <h3 className="font-semibold text-gray-900 truncate text-lg group-hover:text-blue-600 transition-colors" title={project.name}>
                                 {project.name}
                               </h3>
+                              <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border uppercase tracking-wider ${
+                                isOwner ? 'bg-blue-100 text-blue-700 border-blue-200' :
+                                userRole === 'admin' ? 'bg-red-100 text-red-700 border-red-200' :
+                                userRole === 'editor' ? 'bg-amber-100 text-amber-700 border-amber-200' :
+                                'bg-gray-100 text-gray-700 border-gray-200'
+                              }`}>
+                                {userRole}
+                              </span>
                               {project.status === 'draft' && (
                                 <span className="px-2 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 rounded-full border border-orange-200 uppercase tracking-wider">
                                   Draft

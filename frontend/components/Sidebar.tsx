@@ -2,18 +2,13 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Workflow, FolderKanban, HelpCircle, Shield, ChevronLeft, ChevronRight, ClipboardList, LogOut, Clock } from "lucide-react"
+import { LayoutDashboard, Workflow, FolderKanban, HelpCircle, Shield, ChevronLeft, ChevronRight, LogOut, Clock } from "lucide-react"
 import { UserButton, useUser } from "@clerk/nextjs"
 import { cn } from "@/lib/utils"
 import { useUserRole } from "@/context/UserRoleContext"
 import { useState } from "react"
 
 const sidebarItems = [
-  {
-    title: "Dashboard",
-    href: "/dashboard",
-    icon: LayoutDashboard,
-  },
   {
     title: "Process",
     href: "/dashboard/process",
@@ -23,11 +18,6 @@ const sidebarItems = [
     title: "Projects",
     href: "/dashboard/projects",
     icon: FolderKanban,
-  },
-  {
-    title: "Tasks",
-    href: "/dashboard/tasks",
-    icon: ClipboardList,
   },
   {
     title: "Help",
@@ -76,7 +66,7 @@ export function Sidebar() {
 
         <nav className="flex flex-col gap-1.5">
           {sidebarItems.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`) && item.href !== "/dashboard";
+            const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
                 key={item.href}
