@@ -3,7 +3,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, FileSpreadsheet, Layout, Undo, Redo, Trash2, Edit2, Check, X, Users, ChevronRight, History, Download } from 'lucide-react';
+import { Plus, FileSpreadsheet, Layout, Undo, Redo, Trash2, Edit2, Check, X, Users, ChevronRight, History, Download, Settings, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useUser } from '@clerk/nextjs';
@@ -13,6 +13,7 @@ import { ProcessProvider, useProcessContext } from '@/context/ProcessContext';
 import { useCustomNodeStates } from '@/hooks/useCustomNodeStates';
 import { jsPDF } from 'jspdf';
 import { toPng } from 'html-to-image';
+import { toast } from 'sonner';
 import {
   addEdge,
   useEdgesState,
@@ -102,6 +103,7 @@ interface ProcessCanvasProps {
   onInit?: (instance: any) => void;
   wrappedOnNodesChange?: OnNodesChange;
   wrappedOnEdgesChange?: OnEdgesChange;
+  onNodeDragStart?: (event: React.MouseEvent, node: Node) => void;
   dialogOpen: boolean;
   setDialogOpen: (open: boolean) => void;
   dialogData: any;
@@ -129,6 +131,7 @@ const ProcessCanvas = ({
   onInit,
   wrappedOnNodesChange,
   wrappedOnEdgesChange,
+  onNodeDragStart,
   dialogOpen,
   setDialogOpen,
   dialogData,
@@ -151,8 +154,8 @@ const ProcessCanvas = ({
   const onEdgeUpdate = useCallback(
     (oldEdge: Edge, newConnection: Connection) => {
         if (isReadOnly) return;
-        setEdges((els) => updateEdge(oldEdge, newConnection, els));
         saveHistory();
+        setEdges((els) => updateEdge(oldEdge, newConnection, els));
         checkForChanges();
     },
     [setEdges, isReadOnly, saveHistory, checkForChanges]
@@ -167,6 +170,7 @@ const ProcessCanvas = ({
     (event: React.DragEvent) => {
       event.preventDefault();
       if (isReadOnly) return;
+      saveHistory();
 
       const type = event.dataTransfer.getData('application/reactflow');
       const label = event.dataTransfer.getData('application/reactflow/label');
@@ -198,7 +202,7 @@ const ProcessCanvas = ({
         wrappedOnNodesChange([{ type: 'add', item: newNode }]);
       }
     },
-    [reactFlowInstance, setNodes, wrappedOnNodesChange]
+    [reactFlowInstance, setNodes, wrappedOnNodesChange, saveHistory]
   );
 
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
@@ -215,10 +219,9 @@ const ProcessCanvas = ({
 
   const onNodeDragStop = useCallback(() => {
     if (isReadOnly) return;
-    // Manually trigger history save and change check after drag ends
-    saveHistory();
+    // Manually trigger change check after drag ends history was saved at start
     checkForChanges();
-  }, [isReadOnly, saveHistory, checkForChanges]);
+  }, [isReadOnly, checkForChanges]);
 
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
@@ -236,6 +239,7 @@ const ProcessCanvas = ({
       const isSupport = node?.data.support?.includes(currentUser?.id);
       if (!isResponsible && !isSupport) return;
     }
+    saveHistory();
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === nodeId) {
@@ -245,8 +249,6 @@ const ProcessCanvas = ({
       })
     );
     setSelectedNode(null);
-    // Trigger history save
-    saveHistory();
     checkForChanges();
   };
 
@@ -263,6 +265,7 @@ const ProcessCanvas = ({
                 onDrop={onDrop}
                 onDragOver={onDragOver}
                 onNodeDoubleClick={onNodeDoubleClick}
+                onNodeDragStart={onNodeDragStart}
                 onNodeDragStop={onNodeDragStop}
                 onPaneClick={onPaneClick}
                 onEdgeUpdate={onEdgeUpdate}
@@ -351,11 +354,14 @@ export default function CreateProcessPage() {
   const [isSaveVersionDialogOpen, setIsSaveVersionDialogOpen] = useState(false);
   const [isDeleteSheetDialogOpen, setIsDeleteSheetDialogOpen] = useState(false);
   const [sheetToDelete, setSheetToDelete] = useState<string | null>(null);
-  const [isDeleteProjectDialogOpen, setIsDeleteProjectDialogOpen] = useState(false);
   const [newVersionName, setNewVersionName] = useState('');
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [editingSheetName, setEditingSheetName] = useState('');
   const [edgeStyle, setEdgeStyle] = useState<'blue-solid' | 'red-dashed'>('blue-solid');
+
+  // Load Version Confirmation
+  const [isLoadVersionConfirmOpen, setIsLoadVersionConfirmOpen] = useState(false);
+  const [pendingVersionName, setPendingVersionName] = useState<string | null>(null);
 
   // Dialog State moved from ProcessCanvas
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -469,20 +475,6 @@ export default function CreateProcessPage() {
     return role === 'admin';
   }, [role]);
 
-  const onConnect = useCallback((params: any) => {
-    const isRed = edgeStyle === 'red-dashed';
-    const edgeParams = {
-      ...params,
-      type: 'editable-step',
-      animated: isRed,
-      style: isRed 
-        ? { stroke: '#ef4444', strokeDasharray: '5,5', strokeWidth: 2 } 
-        : { stroke: '#3b82f6', strokeWidth: 2 },
-      data: { edgeStyle }
-    };
-    setEdges((eds) => addEdge(edgeParams, eds));
-  }, [edgeStyle, setEdges]);
-
   // History for Undo/Redo
   const [history, setHistory] = useState<{nodes: Node[], edges: Edge[]}[]>([]);
   const [future, setFuture] = useState<{nodes: Node[], edges: Edge[]}[]>([]);
@@ -533,53 +525,83 @@ export default function CreateProcessPage() {
     const currentEdges = edgesRef.current;
     
     setHistory(prev => {
-      // Only save if different from last history entry
+      // Only save if different from last history entry to avoid duplicates
       const lastEntry = prev[prev.length - 1];
-      if (!lastEntry || JSON.stringify(lastEntry) !== JSON.stringify({ nodes: currentNodes, edges: currentEdges })) {
-        return [...prev, { nodes: JSON.parse(JSON.stringify(currentNodes)), edges: JSON.parse(JSON.stringify(currentEdges)) }];
+      const entryToSave = { 
+        nodes: JSON.parse(JSON.stringify(currentNodes)), 
+        edges: JSON.parse(JSON.stringify(currentEdges)) 
+      };
+      
+      if (!lastEntry || JSON.stringify(lastEntry) !== JSON.stringify(entryToSave)) {
+        return [...prev, entryToSave];
       }
       return prev;
     });
     setFuture([]);
   }, [isReadOnly]);
 
+  const onConnect = useCallback((params: any) => {
+    saveHistory();
+    const isRed = edgeStyle === 'red-dashed';
+    const edgeParams = {
+      ...params,
+      type: 'editable-step',
+      animated: isRed,
+      style: isRed 
+        ? { stroke: '#ef4444', strokeDasharray: '5,5', strokeWidth: 2 } 
+        : { stroke: '#3b82f6', strokeWidth: 2 },
+      data: { edgeStyle }
+    };
+    setEdges((eds) => addEdge(edgeParams, eds));
+  }, [edgeStyle, setEdges, saveHistory]);
+
+  const onNodeDragStart = useCallback(() => {
+    if (isReadOnly) return;
+    saveHistory();
+  }, [isReadOnly, saveHistory]);
+
   const historyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Wrapped onNodesChange to save history
   const wrappedOnNodesChange = useCallback((changes: any) => {
-    onNodesChange(changes);
-    
-    // Only trigger history/change check for meaningful changes
-    // We handle position changes separately in onNodeDragStop to avoid capturing every pixel
+    // Only trigger history/change check for meaningful structural changes
+    // dragging is handled by onNodeDragStart
     const isMeaningful = changes.some((c: any) => 
       c.type === 'remove' || 
       c.type === 'add' || 
       c.type === 'reset' ||
-      c.type === 'dimensions' ||
-      (c.type === 'position' && c.dragging === false) // Still keep this for programmatic moves
+      c.type === 'dimensions'
     );
+
+    if (isMeaningful) {
+      saveHistory(); // Save state BEFORE applying change
+    }
+
+    onNodesChange(changes);
 
     if (isMeaningful) {
       if (historyTimeoutRef.current) clearTimeout(historyTimeoutRef.current);
       historyTimeoutRef.current = setTimeout(() => {
-        saveHistory();
         checkForChanges();
-      }, 300); // Increased debounce
+      }, 300);
     }
   }, [onNodesChange, saveHistory, checkForChanges]);
 
   // Wrapped onEdgesChange to save history
   const wrappedOnEdgesChange = useCallback((changes: any) => {
-    onEdgesChange(changes);
-    
     const isMeaningful = changes.some((c: any) => 
-      c.type === 'remove' || c.type === 'add' || c.type === 'reset' || c.type === 'select'
+      c.type === 'remove' || c.type === 'add' || c.type === 'reset'
     );
+
+    if (isMeaningful) {
+      saveHistory();
+    }
+
+    onEdgesChange(changes);
 
     if (isMeaningful) {
       if (historyTimeoutRef.current) clearTimeout(historyTimeoutRef.current);
       historyTimeoutRef.current = setTimeout(() => {
-        saveHistory();
         checkForChanges();
       }, 200);
     }
@@ -836,10 +858,10 @@ export default function CreateProcessPage() {
       
       setIsSaveVersionDialogOpen(false);
       setNewVersionName('');
-      alert('Version saved successfully!');
+      toast.success('Version saved successfully!');
     } catch (error) {
       console.error('Failed to save version:', error);
-      alert('Failed to save version');
+      toast.error('Failed to save version');
     } finally {
       setIsSaving(false);
     }
@@ -865,10 +887,10 @@ export default function CreateProcessPage() {
           setNodes(data.nodes || []);
           setEdges(data.edges || []);
         }
-        alert('File loaded successfully!');
+        toast.success('File loaded successfully!');
       } catch (error) {
         console.error('Failed to parse file:', error);
-        alert('Failed to load file. Invalid JSON format.');
+        toast.error('Failed to load file. Invalid JSON format.');
       }
     };
     reader.readAsText(file);
@@ -895,6 +917,13 @@ export default function CreateProcessPage() {
 
   const handleLoadVersion = useCallback((versionName: string) => {
     if (isReadOnly) return;
+    setPendingVersionName(versionName);
+    setIsLoadVersionConfirmOpen(true);
+  }, [isReadOnly]);
+
+  const confirmLoadVersion = useCallback(() => {
+    if (!pendingVersionName) return;
+    const versionName = pendingVersionName;
     const version = versions.find(v => v.name === versionName);
     if (version && version.sheets) {
       // Ensure all swimLane nodes have zIndex: -1
@@ -906,16 +935,44 @@ export default function CreateProcessPage() {
             : node
         )
       }));
-      setSheets(normalizedSheets);
-      setVersionName(versionName);
-      if (normalizedSheets.length > 0) {
-        setActiveSheetId(normalizedSheets[0].id);
-        setNodes(normalizedSheets[0].nodes || []);
-        setEdges(normalizedSheets[0].edges || []);
+
+      const isCurrentSheetNew = activeSheetId.startsWith('sheet_');
+
+      if (isCurrentSheetNew) {
+        // Load version data INTO the current "New Sheet"
+        const firstVersionSheet = normalizedSheets[0];
+        setNodes(firstVersionSheet.nodes || []);
+        setEdges(firstVersionSheet.edges || []);
+        
+        setSheets(prev => {
+          const updated = prev.map(s => 
+            s.id === activeSheetId 
+              ? { ...s, name: firstVersionSheet.name, nodes: firstVersionSheet.nodes, edges: firstVersionSheet.edges }
+              : s
+          );
+          
+          if (normalizedSheets.length > 1) {
+            return [...updated, ...normalizedSheets.slice(1)];
+          }
+          return updated;
+        });
+      } else {
+        // Standard behavior: replace all sheets
+        setSheets(normalizedSheets);
+        if (normalizedSheets.length > 0) {
+          setActiveSheetId(normalizedSheets[0].id);
+          setNodes(normalizedSheets[0].nodes || []);
+          setEdges(normalizedSheets[0].edges || []);
+        }
       }
-      alert('Version loaded successfully!');
+
+      setVersionName(versionName);
+      setHasUnsavedChanges(true);
+      toast.success('Version loaded successfully!');
     }
-  }, [isReadOnly, versions, setNodes, setEdges]);
+    setIsLoadVersionConfirmOpen(false);
+    setPendingVersionName(null);
+  }, [versions, activeSheetId, setNodes, setEdges, setActiveSheetId, setHasUnsavedChanges, pendingVersionName]);
 
   const handleAddLane = useCallback(() => {
     if (isReadOnly) return;
@@ -980,10 +1037,10 @@ export default function CreateProcessPage() {
         projectName
       });
       setHasUnsavedChanges(false);
-      alert(status === 'published' ? 'Project published successfully!' : 'Project saved successfully!');
+      toast.success(status === 'published' ? 'Project published successfully!' : 'Project saved successfully!');
     } catch (error) {
       console.error('Failed to save project:', error);
-      alert('Failed to save project');
+      toast.error('Failed to save project');
     } finally {
       setIsSaving(false);
     }
@@ -1039,41 +1096,26 @@ export default function CreateProcessPage() {
         projectName
       });
       setHasUnsavedChanges(false);
-      alert(`Process ${status === 'draft' ? 'saved as draft' : 'published'} successfully!`);
+      toast.success(`Process ${status === 'draft' ? 'saved as draft' : 'published'} successfully!`);
     } catch (error) {
       console.error('Failed to save process:', error);
-      alert('Failed to save process');
+      toast.error('Failed to save process');
     } finally {
       setIsSaving(false);
     }
   }, [user?.id, isReadOnly, sheets, activeSheetId, nodes, edges, projectName, processId, router]);
 
-  const handleDelete = useCallback(() => {
-    if ((!projectId && !processId) || isReadOnly) return;
-    setIsDeleteProjectDialogOpen(true);
-  }, [projectId, processId, isReadOnly]);
-
-  const confirmDelete = useCallback(async () => {
+  const handleDeleteSelected = useCallback(() => {
     if (isReadOnly) return;
     
-    try {
-      if (projectId) {
-        await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/projects/${projectId}`, {
-          headers: { "X-Clerk-User-Id": user?.id }
-        });
-        router.push('/dashboard/projects');
-      } else if (processId) {
-        await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/processes/${processId}`, {
-          headers: { "X-Clerk-User-Id": user?.id }
-        });
-        router.push('/dashboard/process');
-      }
-      setIsDeleteProjectDialogOpen(false);
-    } catch (error) {
-      console.error('Failed to delete:', error);
-      alert('Failed to delete');
-    }
-  }, [projectId, processId, isReadOnly, user, router]);
+    const hasSelection = nodesRef.current.some(n => n.selected) || edgesRef.current.some(e => e.selected);
+    if (!hasSelection) return;
+    
+    saveHistory();
+    setNodes((nds) => nds.filter((node) => !node.selected));
+    setEdges((eds) => eds.filter((edge) => !edge.selected));
+    setHasUnsavedChanges(true);
+  }, [isReadOnly, setNodes, setEdges, saveHistory]);
 
   const handleUpdateCollaborators = useCallback(async () => {
     // Reload collaborators without full data reload for better performance
@@ -1208,7 +1250,7 @@ export default function CreateProcessPage() {
       pdf.save(`${projectName.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`);
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Failed to export PDF. Please try again.');
+      toast.error('Failed to export PDF. Please try again.');
     } finally {
       handleSwitchSheet(originalActiveSheetId);
       setIsSaving(false);
@@ -1240,9 +1282,10 @@ export default function CreateProcessPage() {
       }
       setProjectName(editingProjectNameValue.trim());
       setIsEditingProjectName(false);
+      toast.success('Renamed successfully!');
     } catch (error) {
       console.error('Failed to rename:', error);
-      alert('Failed to rename');
+      toast.error('Failed to rename');
       setIsEditingProjectName(false);
     }
   }, [projectId, processId, isReadOnly, editingProjectNameValue]);
@@ -1391,10 +1434,10 @@ export default function CreateProcessPage() {
             <Redo size={18} className="text-gray-600" />
           </button>
           <button
-            onClick={handleDelete}
-            disabled={(!projectId && !processId) || isReadOnly}
+            onClick={handleDeleteSelected}
+            disabled={isReadOnly}
             className="p-2 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-            title={projectId ? "Delete Project" : "Delete Process"}
+            title="Delete Selected"
           >
             <Trash2 size={18} className="text-red-600" />
           </button>
@@ -1497,6 +1540,7 @@ export default function CreateProcessPage() {
             projectOwnerId={projectOwnerId}
             currentUser={user}
             onInit={setRfInstance}
+            onNodeDragStart={onNodeDragStart}
             wrappedOnNodesChange={wrappedOnNodesChange}
             wrappedOnEdgesChange={wrappedOnEdgesChange}
             dialogOpen={dialogOpen}
@@ -1617,6 +1661,30 @@ export default function CreateProcessPage() {
       </DialogContent>
     </Dialog>
 
+    <Dialog open={isLoadVersionConfirmOpen} onOpenChange={setIsLoadVersionConfirmOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Confirm Version Load</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to load the version <strong>{pendingVersionName}</strong>? 
+            {activeSheetId.startsWith('sheet_') 
+              ? "This will populate your current new sheet with this version's data."
+              : "This will replace all current sheets with the data from this version."}
+            Any unsaved changes on the current sheet will be lost.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsLoadVersionConfirmOpen(false)}>Cancel</Button>
+          <Button 
+            onClick={confirmLoadVersion}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            Load Version
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
     <Dialog open={isDeleteSheetDialogOpen} onOpenChange={setIsDeleteSheetDialogOpen}>
       <DialogContent>
         <DialogHeader>
@@ -1637,25 +1705,6 @@ export default function CreateProcessPage() {
       </DialogContent>
     </Dialog>
 
-    <Dialog open={isDeleteProjectDialogOpen} onOpenChange={setIsDeleteProjectDialogOpen}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Delete {projectId ? 'Project' : 'Process'}</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to delete this {projectId ? 'project' : 'process'}? This action cannot be undone and all data associated with it will be permanently removed.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setIsDeleteProjectDialogOpen(false)}>Cancel</Button>
-          <Button 
-            onClick={confirmDelete}
-            className="bg-red-600 hover:bg-red-700 text-white"
-          >
-            Delete
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
     </ProcessProvider>
   );
 }

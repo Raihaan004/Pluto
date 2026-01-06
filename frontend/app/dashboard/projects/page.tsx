@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useUser } from "@clerk/nextjs"
+import { toast } from "sonner"
 import axios from "axios"
 import { Plus, Folder, Calendar, Trash2, Clock, Users, Pencil } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -112,9 +113,10 @@ export default function ProjectsPage() {
       setIsRenameDialogOpen(false)
       setProjectToRename(null)
       setNewProjectName("")
+      toast.success("Project renamed successfully")
     } catch (error) {
       console.error("Failed to rename project:", error)
-      alert("Failed to rename project")
+      toast.error("Failed to rename project")
     }
   }
 
@@ -142,9 +144,10 @@ export default function ProjectsPage() {
       mutateProjects()
       setIsDeleteDialogOpen(false)
       setProjectToDelete(null)
+      toast.success("Project deleted successfully")
     } catch (error) {
       console.error("Failed to delete project:", error)
-      alert("Failed to delete project")
+      toast.error("Failed to delete project")
       mutateProjects()
     }
   }
@@ -166,9 +169,10 @@ export default function ProjectsPage() {
       setProjectName("")
       setSelectedProcessId("")
       setSelectedVersion("")
+      toast.success("Project created successfully")
     } catch (error) {
       console.error("Failed to create project:", error)
-      alert("Failed to create project")
+      toast.error("Failed to create project")
     }
   }
 
@@ -318,14 +322,15 @@ export default function ProjectsPage() {
                               <h3 className="font-semibold text-gray-900 truncate text-lg group-hover:text-blue-600 transition-colors" title={project.name}>
                                 {project.name}
                               </h3>
-                              <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border uppercase tracking-wider ${
-                                isOwner ? 'bg-blue-100 text-blue-700 border-blue-200' :
-                                userRole === 'admin' ? 'bg-red-100 text-red-700 border-red-200' :
-                                userRole === 'editor' ? 'bg-amber-100 text-amber-700 border-amber-200' :
-                                'bg-gray-100 text-gray-700 border-gray-200'
-                              }`}>
-                                {userRole}
-                              </span>
+                              {!isOwner && (
+                                <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border uppercase tracking-wider ${
+                                  userRole === 'admin' ? 'bg-red-100 text-red-700 border-red-200' :
+                                  userRole === 'editor' ? 'bg-amber-100 text-amber-700 border-amber-200' :
+                                  'bg-gray-100 text-gray-700 border-gray-200'
+                                }`}>
+                                  {userRole}
+                                </span>
+                              )}
                               {project.status === 'draft' && (
                                 <span className="px-2 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 rounded-full border border-orange-200 uppercase tracking-wider">
                                   Draft

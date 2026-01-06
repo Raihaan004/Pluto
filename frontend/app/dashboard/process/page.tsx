@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useUserRole } from "@/context/UserRoleContext"
+import { toast } from "sonner"
 import { useState } from "react"
 import { useUser } from "@clerk/nextjs"
 import axios from "axios"
@@ -63,9 +64,10 @@ export default function ProcessPage() {
       setEditingId(null)
       setNewName("")
       mutate() // Revalidate
+      toast.success("Process renamed successfully")
     } catch (error) {
       console.error("Failed to rename process:", error)
-      alert("Failed to rename process")
+      toast.error("Failed to rename process")
       mutate() // Revert on error
     }
   }
@@ -90,9 +92,10 @@ export default function ProcessPage() {
       mutate() // Revalidate
       setIsDeleteDialogOpen(false)
       setProcessToDelete(null)
+      toast.success("Process deleted successfully")
     } catch (error) {
       console.error("Failed to delete process:", error)
-      alert("Failed to delete process")
+      toast.error("Failed to delete process")
       mutate() // Revert on error
     }
   }
