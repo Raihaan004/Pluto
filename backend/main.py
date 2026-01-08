@@ -1,10 +1,11 @@
-from fastapi import FastAPI, HTTPException, Header, Query
+from fastapi import FastAPI, HTTPException, Header, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from database import supabase
 from models import UserCreate, RoleUpdate, ProcessPackageCreate, ProcessRename, ProcessVersionCreate, ProjectCreate, ProjectUpdate, CollaboratorAdd
 from typing import Optional
 from datetime import datetime
+from jira_utils import sync_task_to_jira
 
 import os
 from dotenv import load_dotenv
@@ -417,14 +418,64 @@ def rename_project(project_id: int, rename: ProcessRename):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def process_jira_sync(project_id: int, project_name: str, version: str, sheets: list):
+    """Background task to sync project tasks with Jira"""
+    updated_sheets = []
+    has_changes = False
+    
+    metadata = {
+        "project_name": project_name,
+        "version": version
+    }
+
+    for sheet in sheets:
+        sheet_changed = False
+        nodes = sheet.get("nodes", [])
+        for node in nodes:
+            # Only sync 'activity' or 'process' nodes that have responsibility
+            node_type = node.get("type")
+            data = node.get("data", {})
+            responsibility = data.get("responsibility", [])
+            
+            if (node_type in ["activity", "process"]) and responsibility:
+                # Sync to Jira
+                jira_key = sync_task_to_jira(data, metadata)
+                if jira_key and data.get("jira_issue_id") != jira_key:
+                    data["jira_issue_id"] = jira_key
+                    sheet_changed = True
+                    has_changes = True
+        
+        updated_sheets.append(sheet)
+
+    if has_changes:
+        # Update the project back in Supabase with the new Jira keys
+        try:
+            supabase.table("projects").update({"sheets": updated_sheets}).eq("id", project_id).execute()
+            print(f"Jira sync complete for project {project_id}")
+        except Exception as e:
+            print(f"Error updating project after Jira sync: {e}")
+
 @app.put("/project/{project_id}")
-def update_project(project_id: int, update: ProjectUpdate):
+def update_project(project_id: int, update: ProjectUpdate, background_tasks: BackgroundTasks):
     try:
         data = {
             "updated_at": "now()"
         }
+        
+        project_name = update.name
+        version_name = update.version_name
+        
+        if not project_name or not version_name:
+            # Fetch missing info
+            proj = supabase.table("projects").select("name", "version_name").eq("id", project_id).execute()
+            if proj.data:
+                if not project_name: project_name = proj.data[0]["name"]
+                if not version_name: version_name = proj.data[0]["version_name"]
+
         if update.sheets is not None:
             data["sheets"] = [sheet.model_dump() for sheet in update.sheets]
+            # Trigger Jira sync in background
+            background_tasks.add_task(process_jira_sync, project_id, project_name, version_name, data["sheets"])
             
         if update.name is not None:
             data["name"] = update.name
@@ -441,6 +492,7 @@ def update_project(project_id: int, update: ProjectUpdate):
         response = supabase.table("projects").update(data).eq("id", project_id).execute()
         return {"status": "updated", "data": response.data}
     except Exception as e:
+        print(f"Error updating project: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/projects")

@@ -1,6 +1,6 @@
 import React, { memo, useState } from 'react';
 import { Handle, Position, NodeResizer } from 'reactflow';
-import { Link as LinkIcon, FileText, Users, CheckSquare, BookOpen, Paperclip, AlignLeft, MessageSquare, Edit2, RotateCw } from 'lucide-react';
+import { Link as LinkIcon, FileText, Users, CheckSquare, BookOpen, Paperclip, AlignLeft, MessageSquare, Edit2, RotateCw, ExternalLink } from 'lucide-react';
 import { useProcessContext } from '@/context/ProcessContext';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
@@ -59,16 +59,32 @@ const NodeIcons = ({ data, type }: { data: any, type?: string }) => {
   const hasAuthorComments = data.authorComments && data.authorComments.trim().length > 0;
   const hasReviewerComments = data.reviewerComments && data.reviewerComments.trim().length > 0;
   const hasComments = hasVerificationComments || hasAuthorComments || hasReviewerComments;
+  const hasJira = data.jira_issue_id;
 
-  if (!hasLinks && !hasTemplates && !hasGuidelines && !hasChecklists && !hasRoles && !hasDescription && !hasComments) return null;
+  if (!hasLinks && !hasTemplates && !hasGuidelines && !hasChecklists && !hasRoles && !hasDescription && !hasComments && !hasJira) return null;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent node selection
     openNodeDialog({ ...data, type });
   };
 
+  const handleJiraClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const jiraBaseUrl = process.env.NEXT_PUBLIC_JIRA_URL || "https://your-domain.atlassian.net"; 
+    window.open(`${jiraBaseUrl}/browse/${data.jira_issue_id}`, '_blank');
+  };
+
   return (
     <div className="absolute left-1 top-1/2 -translate-y-1/2 flex flex-col gap-1 cursor-pointer" onClick={handleClick}>
+      {hasJira && (
+        <div 
+          className="bg-blue-600 p-0.5 rounded-full shadow-sm hover:bg-blue-700 active:scale-95 transition-all" 
+          title={`Jira: ${data.jira_issue_id}`}
+          onClick={handleJiraClick}
+        >
+          <ExternalLink className="w-3 h-3 text-white" />
+        </div>
+      )}
       {hasLinks && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-blue-50" title="Has Links"><Paperclip className="w-3 h-3 text-blue-600" /></div>}
       {hasDescription && <div className="bg-white/80 p-0.5 rounded-full shadow-sm flex items-center justify-center w-4 h-4 hover:bg-gray-50" title="Has Description"><span className="text-[10px] font-bold text-gray-700">D</span></div>}
       {hasTemplates && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-orange-50" title="Has Templates"><FileText className="w-3 h-3 text-orange-600" /></div>}

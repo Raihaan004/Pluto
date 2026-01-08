@@ -58,6 +58,12 @@ Pluto is a specialized platform designed for modeling, managing, and executing F
    SUPABASE_URL=your_supabase_url
    SUPABASE_KEY=your_supabase_anon_key
    FRONTEND_URL=http://localhost:3000
+
+   # Jira Integration (Optional)
+   JIRA_URL=https://your-domain.atlassian.net
+   JIRA_EMAIL=your-email@example.com
+   JIRA_API_TOKEN=your-jira-api-token
+   JIRA_PROJECT_KEY=PROJ
    ```
 
    **`frontend/.env`**:
@@ -67,6 +73,7 @@ Pluto is a specialized platform designed for modeling, managing, and executing F
    NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
    NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
    NEXT_PUBLIC_API_URL=http://localhost:8000
+   NEXT_PUBLIC_JIRA_URL=https://your-domain.atlassian.net
    ```
 
 3. **Build and Run**:

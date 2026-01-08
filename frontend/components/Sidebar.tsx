@@ -20,6 +20,12 @@ const sidebarItems = [
     icon: FolderKanban,
   },
   {
+    title: "Admin Console",
+    href: "/dashboard/admin",
+    icon: Shield,
+    adminOnly: true,
+  },
+  {
     title: "Help",
     href: "/dashboard/help",
     icon: HelpCircle,
@@ -66,6 +72,8 @@ export function Sidebar() {
 
         <nav className="flex flex-col gap-1.5">
           {sidebarItems.map((item) => {
+            if (item.adminOnly && role !== 'admin') return null;
+            
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
@@ -94,23 +102,6 @@ export function Sidebar() {
               </Link>
             )
           })}
-          
-          {role === 'admin' && (
-            <Link
-              href="/dashboard/admin"
-              className={cn(
-                "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all relative overflow-hidden mt-4",
-                pathname === "/dashboard/admin"
-                  ? "bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300 shadow-sm"
-                  : "text-gray-600 hover:bg-purple-50 hover:text-purple-900 dark:text-gray-400 dark:hover:bg-gray-800",
-                isCollapsed && "justify-center px-2"
-              )}
-              title={isCollapsed ? "Admin" : undefined}
-            >
-              <Shield className="h-5 w-5" />
-              {!isCollapsed && "Admin Console"}
-            </Link>
-          )}
         </nav>
       </div>
 

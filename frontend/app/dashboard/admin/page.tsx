@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import axios from "axios"
-import { Loader2, Users, Plus, Trash2 } from "lucide-react"
+import { Loader2, Users, Plus, Trash2, CheckCircle2 } from "lucide-react"
 
 interface User {
   id: number
@@ -76,7 +78,7 @@ function ProjectAccessDialog({ project, users, onUpdate }: { project: Project, u
           <Users className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-125">
         <DialogHeader>
           <DialogTitle>Manage Access - {project.name}</DialogTitle>
           <DialogDescription>
@@ -101,7 +103,7 @@ function ProjectAccessDialog({ project, users, onUpdate }: { project: Project, u
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid gap-2 w-[100px]">
+            <div className="grid gap-2 w-25">
               <Label>Role</Label>
               <Select value={selectedRole} onValueChange={setSelectedRole}>
                 <SelectTrigger>
@@ -121,7 +123,7 @@ function ProjectAccessDialog({ project, users, onUpdate }: { project: Project, u
 
           <div className="space-y-2">
             <Label>Current Access</Label>
-            <div className="border rounded-md p-2 space-y-2 max-h-[200px] overflow-y-auto">
+            <div className="border rounded-md p-2 space-y-2 max-h-50 overflow-y-auto">
               <div className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded">
                 <span className="font-medium">Owner</span>
                 <span className="text-muted-foreground">
@@ -170,7 +172,7 @@ function ProjectAccessDialog({ project, users, onUpdate }: { project: Project, u
 function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { targetUser?: User, users: User[], projects: Project[], onUpdate: () => void }) {
   const [isOpen, setIsOpen] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState(targetUser?.clerk_id || "")
-  const [selectedProjectId, setSelectedProjectId] = useState("")
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([])
   const [selectedRole, setSelectedRole] = useState("viewer")
   const [isAdding, setIsAdding] = useState(false)
 
@@ -178,27 +180,37 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
   useEffect(() => {
     if (isOpen) {
       setSelectedUserId(targetUser?.clerk_id || "")
-      setSelectedProjectId("")
+      setSelectedProjectIds([])
       setSelectedRole("viewer")
     }
   }, [isOpen, targetUser])
 
   const handleAddProject = async () => {
-    if (!selectedProjectId || !selectedUserId) return
+    if (selectedProjectIds.length === 0 || !selectedUserId) return
     setIsAdding(true)
     try {
-      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/projects/${selectedProjectId}/collaborators`, {
-        user_id: selectedUserId,
-        role: selectedRole
-      })
+      await Promise.all(selectedProjectIds.map(projectId => 
+        axios.post(`${process.env.NEXT_PUBLIC_API_URL}/projects/${projectId}/collaborators`, {
+          user_id: selectedUserId,
+          role: selectedRole
+        })
+      ))
       onUpdate()
       setIsOpen(false)
     } catch (error) {
-      console.error("Failed to add user to project:", error)
-      alert("Failed to add user to project")
+      console.error("Failed to add user to projects:", error)
+      alert("Failed to add user to one or more projects")
     } finally {
       setIsAdding(false)
     }
+  }
+
+  const toggleProject = (projectId: string) => {
+    setSelectedProjectIds(prev => 
+      prev.includes(projectId) 
+        ? prev.filter(id => id !== projectId)
+        : [...prev, projectId]
+    )
   }
 
   // Filter projects where selected user is not already a member
@@ -223,14 +235,14 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-106.25">
         <DialogHeader>
           <DialogTitle>{targetUser ? "Assign to Project" : "Assign User to Project"}</DialogTitle>
           <DialogDescription>
             {targetUser ? (
-              <>Assign <strong>{targetUser.first_name} {targetUser.last_name}</strong> to an existing project.</>
+              <>Assign <strong>{targetUser.first_name} {targetUser.last_name}</strong> to multiple existing projects.</>
             ) : (
-              "Select a user and a project to create a new assignment."
+              "Select a user and multiple projects to create new assignments."
             )}
           </DialogDescription>
         </DialogHeader>
@@ -254,23 +266,53 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
             </div>
           )}
           <div className="grid gap-2">
-            <Label htmlFor="project">Project</Label>
-            <Select value={selectedProjectId} onValueChange={setSelectedProjectId} disabled={!selectedUserId}>
-              <SelectTrigger>
-                <SelectValue placeholder={selectedUserId ? "Select a project..." : "Select a user first"} />
-              </SelectTrigger>
-              <SelectContent>
+            <Label htmlFor="project">Projects</Label>
+            <ScrollArea className="h-50 w-full border rounded-md p-2">
+              <div className="space-y-1">
                 {availableProjects.length > 0 ? (
-                  availableProjects.map(p => (
-                    <SelectItem key={p.id} value={p.id.toString()}>
-                      {p.name} ({p.version_name})
-                    </SelectItem>
-                  ))
+                  availableProjects.map(p => {
+                    const isSelected = selectedProjectIds.includes(p.id.toString());
+                    return (
+                      <div 
+                        key={p.id} 
+                        className={`group flex items-center justify-between p-2 rounded-md hover:bg-slate-50 cursor-pointer transition-all ${
+                          isSelected ? 'bg-blue-50/50 border-blue-100 border shadow-sm' : 'border border-transparent'
+                        }`}
+                        onClick={() => toggleProject(p.id.toString())}
+                      >
+                        <div className="flex flex-col min-w-0">
+                          <span className={`text-sm font-medium truncate ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}>
+                            {p.name}
+                          </span>
+                          <span className="text-[10px] text-slate-500">{p.version_name}</span>
+                        </div>
+                        <div className={`h-5 w-5 rounded-md border flex items-center justify-center transition-colors ${
+                          isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'
+                        }`}>
+                          {isSelected && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
+                        </div>
+                      </div>
+                    )
+                  })
                 ) : (
-                  <SelectItem value="none" disabled>No available projects</SelectItem>
+                  <div className="text-sm text-slate-400 p-8 text-center mt-4">
+                    {selectedUserId ? "No available projects for this user" : "Select a user first"}
+                  </div>
                 )}
-              </SelectContent>
-            </Select>
+              </div>
+            </ScrollArea>
+            {selectedProjectIds.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {selectedProjectIds.map(id => {
+                  const p = projects.find(proj => proj.id.toString() === id)
+                  return p ? (
+                    <Badge key={id} variant="secondary" className="bg-blue-50 text-blue-600 border-blue-100 font-normal px-2 py-0">
+                      {p.name}
+                    </Badge>
+                  ) : null
+                })}
+              </div>
+            )}
           </div>
           <div className="grid gap-2">
             <Label htmlFor="role">Role</Label>
@@ -288,7 +330,11 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
-          <Button onClick={handleAddProject} disabled={!selectedProjectId || !selectedUserId || isAdding} className="bg-blue-600 hover:bg-blue-700">
+          <Button 
+            onClick={handleAddProject} 
+            disabled={selectedProjectIds.length === 0 || !selectedUserId || isAdding} 
+            className="bg-blue-600 hover:bg-blue-700"
+          >
             {isAdding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
             Assign User
           </Button>
@@ -410,7 +456,7 @@ export default function AdminPage() {
                       </td>
                       <td className="p-4 align-middle">{u.email}</td>
                       <td className="p-4 align-middle">
-                        <div className="flex flex-col gap-1 max-h-[100px] overflow-y-auto">
+                        <div className="flex flex-col gap-1 max-h-25 overflow-y-auto">
                           {projects.filter(p => 
                             p.user_id === u.clerk_id || 
                             p.collaborators?.some(c => c.user_id === u.clerk_id)
@@ -454,9 +500,8 @@ export default function AdminPage() {
                       </td>
                       <td className="p-4 align-middle">
                         <div className="flex gap-2 items-center justify-end">
-
                           <select 
-                            className="h-9 w-[120px] rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                            className="h-9 w-30 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                             value={u.role}
                             onChange={(e) => handleRoleUpdate(u.clerk_id, e.target.value)}
                             disabled={updatingId === u.clerk_id || u.clerk_id === user?.id}
