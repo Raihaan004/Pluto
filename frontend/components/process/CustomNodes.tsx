@@ -179,16 +179,20 @@ const DecisionNode = ({ data, selected, width, height }: any) => {
     <>
       <NodeResizer color="#ea580c" isVisible={selected} minWidth={100} minHeight={100} />
       <div className="w-full h-full relative flex items-center justify-center group">
-        <div 
-          className="absolute inset-0 border-2 shadow-md rounded-md"
-          style={{ 
-            backgroundColor: data.backgroundColor || '#FED7AA', 
-            borderColor: '#FB923C',
-            clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
-            width: '100%',
-            height: '100%',
-          }}
-        ></div>
+        <svg 
+          className="absolute inset-0 w-full h-full overflow-visible"
+          viewBox="0 0 100 100" 
+          preserveAspectRatio="none"
+        >
+          <polygon 
+            points="50,0 100,50 50,100 0,50" 
+            fill={data.backgroundColor || '#FED7AA'} 
+            stroke="#FB923C"
+            strokeWidth="2"
+            vectorEffect="non-scaling-stroke"
+            className="drop-shadow-md"
+          />
+        </svg>
         <div className="relative z-10 w-full h-full flex items-center justify-center pointer-events-none">
            {/* Icons need to be positioned carefully in diamond */}
            <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-auto">
