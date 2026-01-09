@@ -4,7 +4,7 @@ import {
   User, Users, Settings, Palette, Type, 
   Link as LinkIcon, CheckCircle2, AlertCircle,
   Info, Layout, AlignLeft, AlignCenter, AlignRight,
-  ChevronDown, ChevronUp, MessageSquare
+  ChevronDown, ChevronUp, MessageSquare, FileSpreadsheet
 } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -35,6 +35,7 @@ interface PropertiesPanelProps {
   projectId?: string | null;
   projectOwnerId?: string | null;
   isPublished?: boolean;
+  sheets?: any[];
 }
 
 interface User {
@@ -45,7 +46,7 @@ interface User {
   role: string;
 }
 
-export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, projectOwnerId, isPublished }: PropertiesPanelProps) => {
+export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, projectOwnerId, isPublished, sheets = [] }: PropertiesPanelProps) => {
   const { user } = useUser();
   const [formData, setFormData] = useState<any>({
     label: '',
@@ -64,6 +65,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
     roles: [],
     responsibility: [],
     support: [],
+    linkedSheetId: '',
     description: '',
     verificationComments: '',
     authorComments: '',
@@ -194,6 +196,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
         roles: selectedNode.data.roles || [],
         responsibility: selectedNode.data.responsibility || [],
         support: selectedNode.data.support || [],
+        linkedSheetId: selectedNode.data.linkedSheetId || '',
         description: selectedNode.data.description || '',
         verificationComments: selectedNode.data.verificationComments || '',
         authorComments: selectedNode.data.authorComments || '',
@@ -455,6 +458,45 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
             </div>
           )}
         </div>
+
+        {/* Linked Sheet Section */}
+        {(isActivity || isProcess) && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
+              <Layout size={16} className="text-orange-500" />
+              <h3>Linked Flow</h3>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Connect to Sheet</Label>
+              <Select
+                value={formData.linkedSheetId}
+                onValueChange={(val) => handleChange('linkedSheetId', val)}
+                disabled={isPublished}
+              >
+                <SelectTrigger className={cn(
+                  "bg-white border-slate-200",
+                  isPublished && "bg-slate-50 opacity-70"
+                )}>
+                  <SelectValue placeholder="Select a sheet to link..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {sheets.filter(s => s.id !== 'parent').map(sheet => (
+                    <SelectItem key={sheet.id} value={sheet.id}>
+                      <div className="flex items-center gap-2">
+                        <FileSpreadsheet className="w-3 h-3 text-slate-400" />
+                        {sheet.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-slate-400 ml-1 italic">
+                Linking a sheet allows users to jump to that specific flow from this node.
+              </p>
+            </div>
+          </div>
+        )}
 
         {!isTextNode && <Separator className="bg-slate-200/60" />}
 

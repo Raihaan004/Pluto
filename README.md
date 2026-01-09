@@ -2,7 +2,7 @@
 
 Pluto is a specialized platform designed for modeling, managing, and executing Functional Safety (FuSa) processes compliant with standards like ISO 26262. It provides a bridge between high-level process design and project-level execution.
 
-![Project Overview](frontend/public/placeholder.png) *Link to a demo or screenshot*
+![Project Overview](frontend/public/D-D.png) *Link to a demo or screenshot*
 
 ## ✨ Core Features
 

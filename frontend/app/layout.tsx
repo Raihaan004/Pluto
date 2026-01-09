@@ -1,5 +1,6 @@
 import { ClerkProvider } from '@clerk/nextjs'
 import { UserRoleProvider } from '@/context/UserRoleContext';
+import { NavigationProvider } from '@/context/NavigationContext';
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -32,8 +33,10 @@ export default function RootLayout({
           className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         >
           <UserRoleProvider>
-            {children}
-            <Toaster position="top-right" richColors />
+            <NavigationProvider>
+              {children}
+              <Toaster position="top-right" richColors />
+            </NavigationProvider>
           </UserRoleProvider>
         </body>
       </html>

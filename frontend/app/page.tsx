@@ -136,10 +136,22 @@ export default function LandingPage() {
       />
 
       {/* Navbar */}
-      <header className="flex h-16 items-center justify-between border-b px-6 lg:px-12 bg-white/80 backdrop-blur-md z-50 sticky top-0">
-        <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">P</div>
-            <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">Pluto</span>
+      <header className="flex h-20 items-center justify-between border-b px-6 lg:px-12 bg-white/80 backdrop-blur-md z-50 sticky top-0">
+        <div className="flex items-center gap-3 group cursor-pointer">
+            <div className="relative">
+              <div className="absolute -inset-1 bg-linear-to-r from-blue-600 to-purple-600 rounded-xl blur-sm opacity-25 group-hover:opacity-50 transition-opacity duration-300" />
+              <div className="relative w-10 h-10 bg-linear-to-br from-blue-600 via-blue-700 to-purple-700 rounded-xl flex items-center justify-center text-white font-extrabold text-xl shadow-lg border border-white/20">
+                <span>P</span>
+              </div>
+            </div>
+            <div className="flex flex-col leading-none">
+              <span className="text-2xl font-black tracking-tighter text-gray-900 bg-clip-text text-transparent bg-linear-to-r from-gray-900 to-gray-600">
+                Pluto
+              </span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600/80 mt-0.5">
+                Design
+              </span>
+            </div>
         </div>
         <nav className="flex gap-6 items-center">
           <Link href="#features" className="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors">

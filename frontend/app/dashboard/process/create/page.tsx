@@ -2,13 +2,14 @@
 
 import React, { useState, useRef, useCallback, useEffect, useMemo, Suspense } from 'react';
 import dynamic from 'next/dynamic';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Plus, FileSpreadsheet, Layout, Undo, Redo, Trash2, Edit2, Check, X, Users, ChevronRight, History, Download, Settings, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useUser } from '@clerk/nextjs';
 import axios from 'axios';
 import { useUserRole } from '@/context/UserRoleContext';
+import { useNavigation, useNavigationState, useNavigationDispatch } from '@/context/NavigationContext';
 import { ProcessProvider, useProcessContext } from '@/context/ProcessContext';
 import { useCustomNodeStates } from '@/hooks/useCustomNodeStates';
 import { jsPDF } from 'jspdf';
@@ -27,6 +28,7 @@ import {
   OnConnect,
   getNodesBounds,
   getViewportForBounds,
+  ConnectionLineType,
 } from 'reactflow';
 
 // Import ReactFlow normally (needed immediately for canvas)
@@ -41,6 +43,13 @@ import 'reactflow/dist/style.css';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 const ProcessSidebar = dynamic(() => import('@/components/process/ProcessSidebar').then(mod => ({ default: mod.ProcessSidebar })), {
   ssr: false,
@@ -110,6 +119,8 @@ interface ProcessCanvasProps {
   edgeStyle: 'blue-solid' | 'red-dashed';
   saveHistory: () => void;
   checkForChanges: () => void;
+  sheets: ProcessSheet[];
+  handleSwitchSheet: (sheetId: string) => void;
 }
 
 const LANE_WIDTH = 300;
@@ -137,7 +148,9 @@ const ProcessCanvas = ({
   dialogData,
   edgeStyle,
   saveHistory,
-  checkForChanges
+  checkForChanges,
+  sheets,
+  handleSwitchSheet
 }: ProcessCanvasProps) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
@@ -281,6 +294,7 @@ const ProcessCanvas = ({
                       type: MarkerType.ArrowClosed,
                   },
                 }}
+                connectionLineType={ConnectionLineType.Step}
                 connectionLineStyle={edgeStyle === 'red-dashed' 
                   ? { stroke: '#ef4444', strokeDasharray: '5,5', strokeWidth: 2 } 
                   : { stroke: '#3b82f6', strokeWidth: 2 }}
@@ -302,6 +316,7 @@ const ProcessCanvas = ({
             projectId={projectId}
             projectOwnerId={projectOwnerId}
             isPublished={isPublished}
+            sheets={sheets}
         />
       )}
       
@@ -310,6 +325,8 @@ const ProcessCanvas = ({
         onClose={() => setDialogOpen(false)} 
         data={dialogData} 
         users={users}
+        onViewSheet={handleSwitchSheet}
+        sheets={sheets}
       />
     </div>
   );
@@ -318,7 +335,17 @@ const ProcessCanvas = ({
 export default function CreateProcessPage() {
   const { role, loading } = useUserRole();
   const { user } = useUser();
+  const { hasUnsavedChanges } = useNavigationState();
+  const { setHasUnsavedChanges, setSaveAction } = useNavigationDispatch();
   const router = useRouter();
+
+  useEffect(() => {
+    // Reset on unmount
+    return () => {
+      setHasUnsavedChanges(false);
+      setSaveAction(null);
+    };
+  }, []);
   const searchParams = useSearchParams();
   const processId = searchParams.get('id');
   const projectId = searchParams.get('projectId');
@@ -358,6 +385,10 @@ export default function CreateProcessPage() {
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [editingSheetName, setEditingSheetName] = useState('');
   const [edgeStyle, setEdgeStyle] = useState<'blue-solid' | 'red-dashed'>('blue-solid');
+  const [saveScope, setSaveScope] = useState<'all' | 'current'>('all');
+
+  const pathname = usePathname();
+  const isProjectCanvas = pathname.includes('/dashboard/projects/editor');
 
   // Load Version Confirmation
   const [isLoadVersionConfirmOpen, setIsLoadVersionConfirmOpen] = useState(false);
@@ -368,10 +399,15 @@ export default function CreateProcessPage() {
   const [dialogData, setDialogData] = useState<any>(null);
 
   const openNodeDialog = useCallback((data: any) => {
-    if (projectPermission === 'viewer') return;
+    const isResponsible = data.responsibility?.includes(user?.id);
+    const isSupport = data.support?.includes(user?.id);
+    
+    // Allow if user is owner/editor, OR if they are an assigned user on this node
+    if (projectPermission === 'viewer' && !isResponsible && !isSupport) return;
+    
     setDialogData(data);
     setDialogOpen(true);
-  }, [projectPermission]);
+  }, [projectPermission, user?.id]);
 
   const handleAddSheet = () => {
     const newSheetId = `sheet_${Date.now()}`;
@@ -487,12 +523,26 @@ export default function CreateProcessPage() {
 
   // Track original saved state to detect changes
   const [originalSavedState, setOriginalSavedState] = useState<{sheets: ProcessSheet[], projectName: string} | null>(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Check if there are unsaved changes
   const checkForChanges = useCallback(() => {
+    // For new unsaved processes
     if (!originalSavedState || (!projectId && !processId)) {
-      setHasUnsavedChanges(false);
+      // Check if current state differs from initial state
+      const hasMoreThanOneSheet = sheets.length > 1;
+      const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
+      
+      // Find parent process sheet
+      const parentSheet = sheets.find(s => s.id === 'parent');
+      const hasAddedNodes = (parentSheet?.nodes.length || 0) > 1 || nodesRef.current.length > 1;
+      const hasAddedEdges = (parentSheet?.edges.length || 0) > 0 || edgesRef.current.length > 0;
+      const hasRenamedProject = projectName !== 'Create New Process' && projectName !== '';
+
+      if (hasMoreThanOneSheet || hasAddedNodes || hasAddedEdges || hasRenamedProject) {
+        setHasUnsavedChanges(true);
+      } else {
+        setHasUnsavedChanges(false);
+      }
       return;
     }
 
@@ -553,7 +603,8 @@ export default function CreateProcessPage() {
       data: { edgeStyle }
     };
     setEdges((eds) => addEdge(edgeParams, eds));
-  }, [edgeStyle, setEdges, saveHistory]);
+    checkForChanges();
+  }, [edgeStyle, setEdges, saveHistory, checkForChanges]);
 
   const onNodeDragStart = useCallback(() => {
     if (isReadOnly) return;
@@ -838,9 +889,13 @@ export default function CreateProcessPage() {
         setSheets(updatedSheets);
       }
 
+      const sheetsToSave = saveScope === 'all' 
+        ? updatedSheets 
+        : [updatedSheets[currentSheetIndex]].filter(Boolean);
+
       await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/processes/${targetProcessId}/versions`, {
         name: newVersionName.trim(),
-        sheets: updatedSheets.map(s => ({
+        sheets: sheetsToSave.map(s => ({
           id: s.id,
           name: s.name,
           nodes: s.nodes, // Includes all nodes (including lanes) with their current positions
@@ -1104,6 +1159,23 @@ export default function CreateProcessPage() {
       setIsSaving(false);
     }
   }, [user?.id, isReadOnly, sheets, activeSheetId, nodes, edges, projectName, processId, router]);
+
+  useEffect(() => {
+    const saveWrapper = async () => {
+      try {
+        if (isProjectCanvas) {
+          await handleSaveProject('draft');
+        } else {
+          await handleSaveProcess('draft');
+        }
+        return true;
+      } catch (error) {
+        console.error("Save failed", error);
+        return false;
+      }
+    };
+    setSaveAction(saveWrapper);
+  }, [isProjectCanvas, handleSaveProject, handleSaveProcess, setSaveAction]);
 
   const handleDeleteSelected = useCallback(() => {
     if (isReadOnly) return;
@@ -1523,6 +1595,7 @@ export default function CreateProcessPage() {
           onLoadVersion={!isReadOnly ? handleLoadVersion : undefined}
           onAddLane={!isReadOnly ? handleAddLane : undefined}
           isReadOnly={isReadOnly}
+          showActions={!isProjectCanvas}
         />
         <ReactFlowProvider>
           <ProcessCanvas
@@ -1549,6 +1622,8 @@ export default function CreateProcessPage() {
             edgeStyle={edgeStyle}
             saveHistory={saveHistory}
             checkForChanges={checkForChanges}
+            sheets={sheets}
+            handleSwitchSheet={handleSwitchSheet}
           />
         </ReactFlowProvider>
       </div>
@@ -1635,18 +1710,35 @@ export default function CreateProcessPage() {
         <DialogHeader>
           <DialogTitle>Save Process Version</DialogTitle>
           <DialogDescription>
-            Enter a name for this version to save the current state of all sheets.
+            Enter a name for this version and select which sheets to save.
           </DialogDescription>
         </DialogHeader>
-        <div className="py-4">
-          <Label htmlFor="versionName" className="mb-2 block">Version Name</Label>
-          <Input
-            id="versionName"
-            value={newVersionName}
-            onChange={(e) => setNewVersionName(e.target.value)}
-            placeholder="e.g. v1.0 - Initial Draft"
-            autoFocus
-          />
+        <div className="py-4 space-y-4">
+          <div>
+            <Label htmlFor="versionName" className="mb-2 block">Version Name</Label>
+            <Input
+              id="versionName"
+              value={newVersionName}
+              onChange={(e) => setNewVersionName(e.target.value)}
+              placeholder="e.g. v1.0 - Initial Draft"
+              autoFocus
+            />
+          </div>
+          <div>
+            <Label className="mb-2 block">Save Scope</Label>
+            <Select 
+              value={saveScope} 
+              onValueChange={(value: 'all' | 'current') => setSaveScope(value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select what to save" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sheets</SelectItem>
+                <SelectItem value="current">Current Sheet Only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setIsSaveVersionDialogOpen(false)}>Cancel</Button>

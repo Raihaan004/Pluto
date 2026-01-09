@@ -1,12 +1,22 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { LayoutDashboard, Workflow, FolderKanban, HelpCircle, Shield, ChevronLeft, ChevronRight, LogOut, Clock } from "lucide-react"
+import { usePathname, useRouter } from "next/navigation"
+import { LayoutDashboard, Workflow, FolderKanban, HelpCircle, Shield, ChevronLeft, ChevronRight, LogOut, Clock, AlertTriangle } from "lucide-react"
 import { UserButton, useUser } from "@clerk/nextjs"
 import { cn } from "@/lib/utils"
 import { useUserRole } from "@/context/UserRoleContext"
+import { useNavigationState, useNavigationDispatch } from "@/context/NavigationContext"
 import { useState } from "react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 
 const sidebarItems = [
   {
@@ -34,28 +44,82 @@ const sidebarItems = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
   const { role } = useUserRole()
   const { user } = useUser()
+  const { hasUnsavedChanges, saveAction } = useNavigationState()
+  const { setHasUnsavedChanges } = useNavigationDispatch()
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false)
+  const [pendingHref, setPendingHref] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+
+  const handleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    // If we're already on this page, don't do anything special
+    if (pathname === href) return
+
+    if (hasUnsavedChanges) {
+      e.preventDefault()
+      setPendingHref(href)
+      setShowConfirmDialog(true)
+    }
+  }
+
+  const handleConfirmNavigate = () => {
+    setHasUnsavedChanges(false)
+    setShowConfirmDialog(false)
+    if (pendingHref) {
+      router.push(pendingHref)
+    }
+  }
+
+  const handleSaveAndNavigate = async () => {
+    if (saveAction) {
+      setIsSaving(true)
+      const success = await saveAction()
+      setIsSaving(false)
+      if (success) {
+        setHasUnsavedChanges(false)
+        setShowConfirmDialog(false)
+        if (pendingHref) {
+          router.push(pendingHref)
+        }
+      }
+    }
+  }
 
   return (
-    <div className={cn(
-      "flex h-screen flex-col justify-between border-r bg-white dark:bg-gray-900 transition-all duration-300 shadow-sm z-20 relative",
-      isCollapsed ? "w-20" : "w-72"
-    )}>
+    <>
+      <div className={cn(
+        "flex h-screen flex-col justify-between border-r bg-white dark:bg-gray-900 transition-all duration-300 shadow-sm z-20 relative",
+        isCollapsed ? "w-20" : "w-72"
+      )}>
       <div className="flex flex-col gap-6 p-4">
-        <div className={cn("flex items-center h-12", isCollapsed ? "justify-center" : "justify-between px-2")}>
+        <div className={cn("flex items-center h-12 mb-2", isCollapsed ? "justify-center" : "justify-between px-2")}>
           {!isCollapsed && (
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-linear-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-md">
-                P
+            <div className="flex items-center gap-3 transition-all duration-300 hover:scale-105 group cursor-default">
+              <div className="relative">
+                <div className="absolute -inset-1 bg-linear-to-r from-blue-600 to-purple-600 rounded-xl blur-sm opacity-25 group-hover:opacity-50 transition-opacity duration-300" />
+                <div className="relative w-10 h-10 bg-linear-to-br from-blue-600 via-blue-700 to-purple-700 rounded-xl flex items-center justify-center text-white font-extrabold text-xl shadow-lg border border-white/20">
+                  <span className="drop-shadow-sm">P</span>
+                </div>
               </div>
-              <span className="font-bold text-xl tracking-tight text-gray-900 dark:text-white">Pluto</span>
+              <div className="flex flex-col leading-none">
+                <span className="font-black text-2xl tracking-tighter dark:text-white bg-clip-text text-transparent bg-linear-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400">
+                  Pluto
+                </span>
+                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600/80 mt-0.5">
+                  Design
+                </span>
+              </div>
             </div>
           )}
           {isCollapsed && (
-             <div className="w-8 h-8 bg-linear-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-md">
-                P
+             <div className="relative group transition-all duration-300 hover:scale-110 cursor-pointer">
+                <div className="absolute -inset-1 bg-linear-to-r from-blue-600 to-purple-600 rounded-xl blur-sm opacity-25 group-hover:opacity-50 transition-opacity" />
+                <div className="relative w-10 h-10 bg-linear-to-br from-blue-600 via-blue-700 to-purple-700 rounded-xl flex items-center justify-center text-white font-extrabold text-xl shadow-lg border border-white/20">
+                  <span>P</span>
+                </div>
              </div>
           )}
           
@@ -79,6 +143,7 @@ export function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={(e) => handleLinkClick(e, item.href)}
                 className={cn(
                   "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all relative overflow-hidden",
                   isActive
@@ -133,5 +198,45 @@ export function Sidebar() {
         </div>
       </div>
     </div>
+
+      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <DialogContent className="sm:max-w-106.25">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="h-5 w-5" />
+              Unsaved Changes
+            </DialogTitle>
+            <DialogDescription className="py-2">
+              You have unsaved changes in your process. If you leave now, these changes will be lost.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex flex-col sm:flex-row gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setShowConfirmDialog(false)}
+              disabled={isSaving}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="secondary" 
+              onClick={handleConfirmNavigate}
+              disabled={isSaving}
+              className="flex-1 text-red-600 hover:text-red-700"
+            >
+              Discard Changes
+            </Button>
+            <Button 
+              onClick={handleSaveAndNavigate}
+              disabled={isSaving || !saveAction}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {isSaving ? "Saving..." : "Save & Leave"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

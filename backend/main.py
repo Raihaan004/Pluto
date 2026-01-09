@@ -423,23 +423,49 @@ def process_jira_sync(project_id: int, project_name: str, version: str, sheets: 
     updated_sheets = []
     has_changes = False
     
+    # Fetch all users to resolve names in Jira
+    user_map = {}
+    try:
+        users_res = supabase.table("users").select("clerk_id, first_name, last_name").execute()
+        for u in users_res.data:
+            name = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
+            user_map[u['clerk_id']] = name or u['clerk_id']
+    except Exception as e:
+        print(f"Error fetching users for Jira sync: {e}")
+
+    # Fetch project details for metadata
+    project_owner = "Unknown"
+    project_status = "N/A"
+    try:
+        project_res = supabase.table("projects").select("user_id, status").eq("id", project_id).execute()
+        if project_res.data:
+            owner_id = project_res.data[0].get("user_id")
+            project_owner = user_map.get(owner_id, owner_id)
+            project_status = project_res.data[0].get("status", "N/A")
+    except Exception as e:
+        print(f"Error fetching project details for Jira sync: {e}")
+    
     metadata = {
         "project_name": project_name,
-        "version": version
+        "version": version,
+        "project_owner": project_owner,
+        "project_status": project_status,
+        "project_id": project_id
     }
 
     for sheet in sheets:
         sheet_changed = False
         nodes = sheet.get("nodes", [])
         for node in nodes:
-            # Only sync 'activity' or 'process' nodes that have responsibility
+            # Only sync 'activity' or 'process' nodes that have assignments (responsibility or support)
             node_type = node.get("type")
             data = node.get("data", {})
             responsibility = data.get("responsibility", [])
+            support = data.get("support", [])
             
-            if (node_type in ["activity", "process"]) and responsibility:
+            if (node_type in ["activity", "process"]) and (responsibility or support):
                 # Sync to Jira
-                jira_key = sync_task_to_jira(data, metadata)
+                jira_key = sync_task_to_jira(data, metadata, user_map)
                 if jira_key and data.get("jira_issue_id") != jira_key:
                     data["jira_issue_id"] = jira_key
                     sheet_changed = True

@@ -13,6 +13,7 @@ interface ProcessSidebarProps {
   onLoadVersion?: (versionName: string) => void;
   onAddLane?: () => void;
   isReadOnly?: boolean;
+  showActions?: boolean;
 }
 
 export const ProcessSidebar = ({ 
@@ -22,7 +23,8 @@ export const ProcessSidebar = ({
   versions = [], 
   onLoadVersion,
   onAddLane,
-  isReadOnly = false
+  isReadOnly = false,
+  showActions = true
 }: ProcessSidebarProps) => {
   const [isOpen, setIsOpen] = useState(true);
   const { edgeStyle, setEdgeStyle } = useProcessContext();
@@ -174,6 +176,7 @@ export const ProcessSidebar = ({
         </div>
 
         <div className="border-t pt-4 mt-auto flex flex-col gap-2">
+          {showActions && (
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" className="w-full flex items-center gap-2 justify-center border-blue-200 hover:bg-blue-50 text-blue-700">
@@ -221,8 +224,9 @@ export const ProcessSidebar = ({
               </div>
             </PopoverContent>
           </Popover>
+          )}
 
-          {versions.length > 0 && onLoadVersion && (
+          {showActions && versions.length > 0 && onLoadVersion && (
             <div className="mt-2">
               <label className="text-xs font-medium text-gray-500 mb-1 block">Load Version</label>
               <select 

@@ -1,6 +1,6 @@
 import React, { memo, useState } from 'react';
 import { Handle, Position, NodeResizer } from 'reactflow';
-import { Link as LinkIcon, FileText, Users, CheckSquare, BookOpen, Paperclip, AlignLeft, MessageSquare, Edit2, RotateCw, ExternalLink } from 'lucide-react';
+import { Link as LinkIcon, FileText, Users, CheckSquare, BookOpen, Paperclip, AlignLeft, MessageSquare, Edit2, RotateCw, ExternalLink, Layout } from 'lucide-react';
 import { useProcessContext } from '@/context/ProcessContext';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
@@ -58,10 +58,11 @@ const NodeIcons = ({ data, type }: { data: any, type?: string }) => {
   const hasVerificationComments = data.verificationComments && data.verificationComments.trim().length > 0;
   const hasAuthorComments = data.authorComments && data.authorComments.trim().length > 0;
   const hasReviewerComments = data.reviewerComments && data.reviewerComments.trim().length > 0;
-  const hasComments = hasVerificationComments || hasAuthorComments || hasReviewerComments;
+  const hasComments = hasReviewerComments || hasVerificationComments || hasAuthorComments;
   const hasJira = data.jira_issue_id;
+  const hasLinkedSheet = data.linkedSheetId && data.linkedSheetId !== 'none';
 
-  if (!hasLinks && !hasTemplates && !hasGuidelines && !hasChecklists && !hasRoles && !hasDescription && !hasComments && !hasJira) return null;
+  if (!hasLinks && !hasTemplates && !hasGuidelines && !hasChecklists && !hasRoles && !hasDescription && !hasComments && !hasJira && !hasLinkedSheet) return null;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent node selection
@@ -92,6 +93,7 @@ const NodeIcons = ({ data, type }: { data: any, type?: string }) => {
       {hasChecklists && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-purple-50" title="Has Checklists"><CheckSquare className="w-3 h-3 text-purple-600" /></div>}
       {hasRoles && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-gray-50" title="Has Roles/Responsibility"><Users className="w-3 h-3 text-gray-600" /></div>}
       {hasComments && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-yellow-50" title="Has Comments"><MessageSquare className="w-3 h-3 text-yellow-600" /></div>}
+      {hasLinkedSheet && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-orange-50" title="Has Linked Flow"><Layout className="w-3 h-3 text-orange-600" /></div>}
     </div>
   );
 };

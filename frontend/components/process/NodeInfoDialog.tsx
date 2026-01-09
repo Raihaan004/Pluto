@@ -2,7 +2,6 @@ import React from 'react';
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { 
@@ -17,9 +16,11 @@ import {
   Users,
   Link as LinkIcon,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  Layout
 } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -39,13 +40,27 @@ interface NodeInfoDialogProps {
   onClose: () => void;
   data: any;
   users: User[];
+  onViewSheet?: (sheetId: string) => void;
+  sheets?: any[];
 }
 
-export const NodeInfoDialog = ({ isOpen, onClose, data, users = [] }: NodeInfoDialogProps) => {
+export const NodeInfoDialog = ({ isOpen, onClose, data, users = [], onViewSheet, sheets = [] }: NodeInfoDialogProps) => {
   if (!data) return null;
 
+  const getLinkedSheetName = (sheetId: string) => {
+    const sheet = sheets.find((s: any) => s.id === sheetId);
+    return sheet ? sheet.name : 'Unknown Sheet';
+  };
+
+  const handleViewSheet = () => {
+    if (onViewSheet && data.linkedSheetId) {
+      onViewSheet(data.linkedSheetId);
+      onClose();
+    }
+  };
+
   const getUserDetails = (userId: string) => {
-    const user = users.find(u => u.clerk_id === userId);
+    const user = users.find((u: any) => u.clerk_id === userId);
     if (!user) return { name: userId, email: '', role: '', image: '' };
     const name = user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` : user.email;
     return { name, email: user.email, role: user.role, image: user.image_url };
@@ -97,6 +112,29 @@ export const NodeInfoDialog = ({ isOpen, onClose, data, users = [] }: NodeInfoDi
 
           <div className="overflow-y-auto max-h-[70vh] custom-scrollbar">
             <div className="p-6 space-y-8 pb-20">
+              {/* Linked Sheet Section */}
+              {data.linkedSheetId && data.linkedSheetId !== 'none' && (
+                <div className="bg-orange-50/50 border border-orange-100 rounded-2xl p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-orange-100 rounded-xl text-orange-600">
+                      <Layout size={20} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-orange-400 uppercase tracking-widest leading-tight">Linked Flow</p>
+                      <p className="text-sm font-bold text-slate-800">{getLinkedSheetName(data.linkedSheetId)}</p>
+                    </div>
+                  </div>
+                  <Button 
+                    variant="secondary" 
+                    size="sm" 
+                    onClick={handleViewSheet}
+                    className="bg-orange-600 hover:bg-orange-700 text-white rounded-xl h-9 px-4 text-xs font-bold transition-all shadow-sm"
+                  >
+                    View Sheet <ExternalLink className="w-3 h-3 ml-2" />
+                  </Button>
+                </div>
+              )}
+
               {/* Description Section */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
