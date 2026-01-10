@@ -12,6 +12,8 @@ import { useUserRole } from '@/context/UserRoleContext';
 import { useNavigation, useNavigationState, useNavigationDispatch } from '@/context/NavigationContext';
 import { ProcessProvider, useProcessContext } from '@/context/ProcessContext';
 import { useCustomNodeStates } from '@/hooks/useCustomNodeStates';
+import { useHelperLines } from '@/hooks/useHelperLines';
+import { HelperLines } from '@/components/process/HelperLines';
 import { jsPDF } from 'jspdf';
 import { toPng } from 'html-to-image';
 import { toast } from 'sonner';
@@ -29,6 +31,7 @@ import {
   getNodesBounds,
   getViewportForBounds,
   ConnectionLineType,
+  NodeChange,
 } from 'reactflow';
 
 // Import ReactFlow normally (needed immediately for canvas)
@@ -265,13 +268,71 @@ const ProcessCanvas = ({
     checkForChanges();
   };
 
+  const { helperLines, calculateHelperLines, setHelperLines } = useHelperLines();
+
+  const handleNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      let nextChanges = changes;
+
+      // Handle alignment and snapping
+      if (changes.length === 1 && changes[0].type === 'position') {
+        const change0 = changes[0];
+        const helperLineConfig = calculateHelperLines(change0, nodes);
+
+        if (helperLineConfig) {
+          nextChanges = changes.map((change) => {
+            if (change.type === 'position' && change.id === (change0 as any).id && change.position) {
+              return {
+                ...change,
+                position: helperLineConfig.snapPosition,
+              };
+            }
+            return change;
+          });
+        }
+      } else {
+        setHelperLines({});
+      }
+
+      // Automatically adjust edges if nodes are being moved
+      const movedNodeIds = changes
+        .filter(c => c.type === 'position' && c.dragging)
+        .map(c => (c as any).id);
+
+      if (movedNodeIds.length > 0) {
+        setEdges((prevEdges) =>
+          prevEdges.map((edge) => {
+            if (
+              (movedNodeIds.includes(edge.source) || movedNodeIds.includes(edge.target)) &&
+              edge.data?.points
+            ) {
+              // Clear manual points to let the edge auto-adjust
+              return {
+                ...edge,
+                data: { ...edge.data, points: undefined },
+              };
+            }
+            return edge;
+          })
+        );
+      }
+
+      if (wrappedOnNodesChange) {
+        wrappedOnNodesChange(nextChanges);
+      } else {
+        onNodesChange(nextChanges);
+      }
+    },
+    [nodes, onNodesChange, wrappedOnNodesChange, calculateHelperLines, setHelperLines, setEdges]
+  );
+
   return (
     <div className="grow h-full bg-gray-50 relative flex flex-col" ref={reactFlowWrapper}>
       <div className="grow relative">
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
-                onNodesChange={isReadOnly ? noOpNodesChange : (wrappedOnNodesChange || onNodesChange)}
+                onNodesChange={isReadOnly ? noOpNodesChange : handleNodesChange}
                 onEdgesChange={isReadOnly ? noOpEdgesChange : (wrappedOnEdgesChange || onEdgesChange)}
                 onConnect={isReadOnly ? noOpConnect : onConnect}
                 onInit={setReactFlowInstance}
@@ -279,7 +340,10 @@ const ProcessCanvas = ({
                 onDragOver={onDragOver}
                 onNodeDoubleClick={onNodeDoubleClick}
                 onNodeDragStart={onNodeDragStart}
-                onNodeDragStop={onNodeDragStop}
+                onNodeDragStop={() => {
+                  setHelperLines({});
+                  onNodeDragStop();
+                }}
                 onPaneClick={onPaneClick}
                 onEdgeUpdate={onEdgeUpdate}
                 nodeTypes={nodeTypes}
@@ -305,6 +369,7 @@ const ProcessCanvas = ({
                 <Controls />
                 <Background color="#aaa" gap={16} />
                 <MiniMap />
+                <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
             </ReactFlow>
       </div>
 

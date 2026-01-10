@@ -15,6 +15,20 @@ const SNAP_DISTANCE = 15;
 
 type Point = { x: number; y: number };
 
+const parsePathPoints = (path: string): Point[] => {
+  const points: Point[] = [];
+  // Match both M and L commands and their coordinates
+  const matches = path.match(/[ML]\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/g);
+  
+  if (matches) {
+    matches.forEach(match => {
+      const parts = match.replace(/[ML]/, '').split(',');
+      points.push({ x: parseFloat(parts[0]), y: parseFloat(parts[1]) });
+    });
+  }
+  return points;
+};
+
 export default function EditableStepEdge({
   id,
   sourceX,
@@ -32,10 +46,35 @@ export default function EditableStepEdge({
   const { setEdges, screenToFlowPosition } = useReactFlow();
   const points: Point[] = data?.points || [];
 
-  // Helper to get segments (source -> p0, p0 -> p1, ..., pn -> target)
-  const allPoints = [{ x: sourceX, y: sourceY }, ...points, { x: targetX, y: targetY }];
+  // Logic to accurately match React Flow's getSmoothStepPath behavior
+  const getDefaultPoints = useCallback(() => {
+    const [path] = getSmoothStepPath({
+      sourceX,
+      sourceY,
+      sourcePosition,
+      targetX,
+      targetY,
+      targetPosition,
+      borderRadius: 0,
+    });
+    
+    const allParsedPoints = parsePathPoints(path);
+    // Remove the first and last points as they are sourceX/Y and targetX/Y
+    if (allParsedPoints.length >= 2) {
+      return allParsedPoints.slice(1, -1);
+    }
+    return [];
+  }, [sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition]);
+
+  const getPointsForInteraction = useCallback(() => {
+    if (points.length > 0) return points;
+    return getDefaultPoints();
+  }, [points, getDefaultPoints]);
+
+  const effectivePoints = getPointsForInteraction();
+  const allPoints = [{ x: sourceX, y: sourceY }, ...effectivePoints, { x: targetX, y: targetY }];
   
-  const getSegments = () => {
+  const getSegments = useCallback(() => {
     const res = [];
     for (let i = 0; i < allPoints.length - 1; i++) {
         res.push({
@@ -45,7 +84,7 @@ export default function EditableStepEdge({
         });
     }
     return res;
-  };
+  }, [allPoints]);
 
   const segments = getSegments();
 
@@ -62,6 +101,7 @@ export default function EditableStepEdge({
       borderRadius: 0,
     });
   } else {
+    // If we have points, we draw exactly as they are defined for full control
     path = `M ${sourceX},${sourceY}`;
     points.forEach((p) => {
       path += ` L ${p.x},${p.y}`;
@@ -70,17 +110,15 @@ export default function EditableStepEdge({
   }
 
   // If there are no points, we calculate an initial step path representation
-  // but only when starting an interaction to avoid recursion/infinite updates
+  // but only when starting an interaction
   const ensureInitialPoints = useCallback(() => {
     if (points.length === 0) {
-      // Create a simple elbow based on positions
-      const midX = (sourceX + targetX) / 2;
-      const initialPoints = [{ x: midX, y: sourceY }, { x: midX, y: targetY }];
+      const initialPoints = getDefaultPoints();
       updatePoints(initialPoints);
       return initialPoints;
     }
     return points;
-  }, [points, sourceX, sourceY, targetX, targetY]);
+  }, [points, sourceX, sourceY, targetX, targetY, sourcePosition]);
 
   const updatePoints = useCallback(
     (newPoints: Point[]) => {
@@ -103,16 +141,16 @@ export default function EditableStepEdge({
     event.stopPropagation();
     event.preventDefault();
 
+    const startPoints = points.length > 0 ? [...points] : getDefaultPoints();
+
     const onMouseMove = (e: MouseEvent) => {
       const newPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
       
-      const newPoints = [...points];
-      const p = newPoints[index];
-      const prev = index === 0 ? { x: sourceX, y: sourceY } : points[index - 1];
-      const next = index === points.length - 1 ? { x: targetX, y: targetY } : points[index + 1];
+      const newPoints = [...startPoints];
+      const prev = index === 0 ? { x: sourceX, y: sourceY } : startPoints[index - 1];
+      const next = index === startPoints.length - 1 ? { x: targetX, y: targetY } : startPoints[index + 1];
 
       // Step Behavior: Maintain orthogonality with neighbors
-      // Snap aggressively to orthogonal lines
       if (Math.abs(newPos.x - prev.x) < 20) newPos.x = prev.x;
       else if (Math.abs(newPos.y - prev.y) < 20) newPos.y = prev.y;
       
@@ -136,12 +174,11 @@ export default function EditableStepEdge({
     event.stopPropagation();
     event.preventDefault();
 
-    const initialPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-    const allPointsList = [{ x: sourceX, y: sourceY }, ...points, { x: targetX, y: targetY }];
+    const startPoints = points.length > 0 ? [...points] : getDefaultPoints();
+    const allPointsList = [{ x: sourceX, y: sourceY }, ...startPoints, { x: targetX, y: targetY }];
     const p1 = allPointsList[index];
     const p2 = allPointsList[index + 1];
     
-    // Determine orientation
     const isHorizontal = Math.abs(p1.y - p2.y) < 2;
 
     const onMouseMove = (e: MouseEvent) => {
@@ -149,21 +186,18 @@ export default function EditableStepEdge({
       
       let newPointsToAdd: Point[] = [];
       if (isHorizontal) {
-        // Pulling horizontal segment creates a vertical offset: A -> (A.x, Y) -> (B.x, Y) -> B
         newPointsToAdd = [
           { x: p1.x, y: newPos.y },
           { x: p2.x, y: newPos.y }
         ];
       } else {
-        // Pulling vertical segment creates a horizontal offset: A -> (X, A.y) -> (X, B.y) -> B
         newPointsToAdd = [
           { x: newPos.x, y: p1.y },
           { x: newPos.x, y: p2.y }
         ];
       }
 
-      const currentPoints = [...points];
-      // Replace the one point logic with two points logic for "Step" behavior
+      const currentPoints = [...startPoints];
       currentPoints.splice(index, 0, ...newPointsToAdd);
       updatePoints(currentPoints);
     };
@@ -181,44 +215,31 @@ export default function EditableStepEdge({
     event.stopPropagation();
     event.preventDefault();
 
-    // Ensure we have points to work with
-    let currentPoints = points;
-    if (currentPoints.length === 0) {
-        currentPoints = ensureInitialPoints();
-    }
+    const startPoints = points.length > 0 ? [...points] : getDefaultPoints();
+    const allPointsList = [{ x: sourceX, y: sourceY }, ...startPoints, { x: targetX, y: targetY }];
+    const p1 = allPointsList[segmentIndex];
+    const p2 = allPointsList[segmentIndex + 1];
 
-    const segment = {
-        p1: segmentIndex === 0 ? { x: sourceX, y: sourceY } : currentPoints[segmentIndex - 1],
-        p2: segmentIndex === currentPoints.length ? { x: targetX, y: targetY } : currentPoints[segmentIndex]
-    };
-
-    // If initial points were empty, we create an elbow
-    const isHorizontal = Math.abs(segment.p1.y - segment.p2.y) < 5 || Math.abs(segment.p1.x - segment.p2.x) > Math.abs(segment.p1.y - segment.p2.y);
+    const isHorizontal = Math.abs(p1.y - p2.y) < 2;
 
     const onMouseMove = (e: MouseEvent) => {
       const newPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-      let nextPoints = [...currentPoints];
+      let nextPoints = [...startPoints];
 
       if (isHorizontal) {
-        // Move horizontal segment up/down
         if (segmentIndex === 0) {
-            // If dragging first segment of an L-shape
-            nextPoints = [{ x: sourceX, y: newPos.y }, { x: currentPoints[0]?.x || targetX, y: newPos.y }, ...currentPoints.slice(1)];
-        } else if (segmentIndex === currentPoints.length) {
-            // If dragging last segment
-            nextPoints = [...currentPoints.slice(0, -1), { x: currentPoints[currentPoints.length - 1]?.x || sourceX, y: newPos.y }, { x: targetX, y: newPos.y }];
+            nextPoints = [{ x: startPoints[0].x, y: newPos.y }, ...startPoints.slice(1)];
+        } else if (segmentIndex === startPoints.length) {
+            nextPoints = [...startPoints.slice(0, -1), { x: startPoints[startPoints.length - 1].x, y: newPos.y }];
         } else {
-            // Internal segment
             nextPoints[segmentIndex - 1].y = newPos.y;
             nextPoints[segmentIndex].y = newPos.y;
         }
       } else {
-        // Move vertical segment left/right
         if (segmentIndex === 0) {
-            nextPoints = [{ x: newPos.x, y: sourceY }, { x: newPos.x, y: currentPoints[0]?.y || targetY }, ...currentPoints.slice(1)];
-        } else if (segmentIndex === currentPoints.length) {
-            // Segment Pn -> Target
-            nextPoints = [...currentPoints.slice(0, -1), { x: newPos.x, y: currentPoints[currentPoints.length - 1]?.y || sourceY }, { x: newPos.x, y: targetY }];
+            nextPoints = [{ x: newPos.x, y: startPoints[0].y }, ...startPoints.slice(1)];
+        } else if (segmentIndex === startPoints.length) {
+            nextPoints = [...startPoints.slice(0, -1), { x: newPos.x, y: startPoints[startPoints.length - 1].y }];
         } else {
             nextPoints[segmentIndex - 1].x = newPos.x;
             nextPoints[segmentIndex].x = newPos.x;

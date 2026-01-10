@@ -1,6 +1,6 @@
 import React, { memo, useState } from 'react';
 import { Handle, Position, NodeResizer } from 'reactflow';
-import { Link as LinkIcon, FileText, Users, CheckSquare, BookOpen, Paperclip, AlignLeft, MessageSquare, Edit2, RotateCw, ExternalLink, Layout } from 'lucide-react';
+import { Edit2, RotateCw, ExternalLink, Layout, Info } from 'lucide-react';
 import { useProcessContext } from '@/context/ProcessContext';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
@@ -49,20 +49,24 @@ const MultiHandles = ({ colorClass }: { colorClass: string }) => {
 
 const NodeIcons = ({ data, type }: { data: any, type?: string }) => {
   const { openNodeDialog } = useProcessContext();
+  
+  const hasJira = data.jira_issue_id;
+  const hasLinkedSheet = data.linkedSheetId && data.linkedSheetId !== 'none';
+  
+  // Aggregate all other information into one "Info" icon
   const hasLinks = data.links && data.links.length > 0;
   const hasTemplates = data.templates && data.templates.length > 0;
   const hasGuidelines = data.guidelines && data.guidelines.length > 0;
   const hasChecklists = data.checklists && data.checklists.length > 0;
   const hasRoles = (data.roles && data.roles.length > 0) || (data.responsibility && data.responsibility.length > 0) || (data.support && data.support.length > 0) || data.rolesDescription || data.responsibilitiesDescription;
   const hasDescription = data.description && data.description.trim().length > 0;
-  const hasVerificationComments = data.verificationComments && data.verificationComments.trim().length > 0;
-  const hasAuthorComments = data.authorComments && data.authorComments.trim().length > 0;
-  const hasReviewerComments = data.reviewerComments && data.reviewerComments.trim().length > 0;
-  const hasComments = hasReviewerComments || hasVerificationComments || hasAuthorComments;
-  const hasJira = data.jira_issue_id;
-  const hasLinkedSheet = data.linkedSheetId && data.linkedSheetId !== 'none';
+  const hasComments = (data.verificationComments && data.verificationComments.trim().length > 0) || 
+                      (data.authorComments && data.authorComments.trim().length > 0) || 
+                      (data.reviewerComments && data.reviewerComments.trim().length > 0);
+  
+  const hasGeneralInfo = hasLinks || hasTemplates || hasGuidelines || hasChecklists || hasRoles || hasDescription || hasComments;
 
-  if (!hasLinks && !hasTemplates && !hasGuidelines && !hasChecklists && !hasRoles && !hasDescription && !hasComments && !hasJira && !hasLinkedSheet) return null;
+  if (!hasJira && !hasLinkedSheet && !hasGeneralInfo) return null;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent node selection
@@ -86,14 +90,18 @@ const NodeIcons = ({ data, type }: { data: any, type?: string }) => {
           <ExternalLink className="w-3 h-3 text-white" />
         </div>
       )}
-      {hasLinks && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-blue-50" title="Has Links"><Paperclip className="w-3 h-3 text-blue-600" /></div>}
-      {hasDescription && <div className="bg-white/80 p-0.5 rounded-full shadow-sm flex items-center justify-center w-4 h-4 hover:bg-gray-50" title="Has Description"><span className="text-[10px] font-bold text-gray-700">D</span></div>}
-      {hasTemplates && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-orange-50" title="Has Templates"><FileText className="w-3 h-3 text-orange-600" /></div>}
-      {hasGuidelines && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-green-50" title="Has Guidelines"><BookOpen className="w-3 h-3 text-green-600" /></div>}
-      {hasChecklists && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-purple-50" title="Has Checklists"><CheckSquare className="w-3 h-3 text-purple-600" /></div>}
-      {hasRoles && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-gray-50" title="Has Roles/Responsibility"><Users className="w-3 h-3 text-gray-600" /></div>}
-      {hasComments && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-yellow-50" title="Has Comments"><MessageSquare className="w-3 h-3 text-yellow-600" /></div>}
-      {hasLinkedSheet && <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-orange-50" title="Has Linked Flow"><Layout className="w-3 h-3 text-orange-600" /></div>}
+      
+      {hasGeneralInfo && (
+        <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-blue-50" title="Information Available">
+          <Info className="w-3 h-3 text-blue-600" />
+        </div>
+      )}
+
+      {hasLinkedSheet && (
+        <div className="bg-white/80 p-0.5 rounded-full shadow-sm hover:bg-orange-50" title="Has Linked Flow">
+          <Layout className="w-3 h-3 text-orange-600" />
+        </div>
+      )}
     </div>
   );
 };
