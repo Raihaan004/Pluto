@@ -460,7 +460,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
         </div>
 
         {/* Linked Sheet Section */}
-        {(isActivity || isProcess) && (
+        {(isWorkProduct || isProcess) && (
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
               <Layout size={16} className="text-orange-500" />

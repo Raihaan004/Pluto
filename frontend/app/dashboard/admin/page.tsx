@@ -173,7 +173,7 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
   const [isOpen, setIsOpen] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState(targetUser?.clerk_id || "")
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([])
-  const [selectedRole, setSelectedRole] = useState("viewer")
+  const [projectRoles, setProjectRoles] = useState<Record<string, string>>({})
   const [isAdding, setIsAdding] = useState(false)
 
   // Reset state when targetUser changes or dialog opens
@@ -181,7 +181,7 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
     if (isOpen) {
       setSelectedUserId(targetUser?.clerk_id || "")
       setSelectedProjectIds([])
-      setSelectedRole("viewer")
+      setProjectRoles({})
     }
   }, [isOpen, targetUser])
 
@@ -192,7 +192,7 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
       await Promise.all(selectedProjectIds.map(projectId => 
         axios.post(`${process.env.NEXT_PUBLIC_API_URL}/projects/${projectId}/collaborators`, {
           user_id: selectedUserId,
-          role: selectedRole
+          role: projectRoles[projectId] || "viewer"
         })
       ))
       onUpdate()
@@ -206,11 +206,22 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
   }
 
   const toggleProject = (projectId: string) => {
-    setSelectedProjectIds(prev => 
-      prev.includes(projectId) 
-        ? prev.filter(id => id !== projectId)
-        : [...prev, projectId]
-    )
+    setSelectedProjectIds(prev => {
+      if (prev.includes(projectId)) {
+        const next = prev.filter(id => id !== projectId)
+        const nextRoles = { ...projectRoles }
+        delete nextRoles[projectId]
+        setProjectRoles(nextRoles)
+        return next
+      } else {
+        setProjectRoles(prev => ({ ...prev, [projectId]: "viewer" }))
+        return [...prev, projectId]
+      }
+    })
+  }
+
+  const handleRoleChangeForProject = (projectId: string, role: string) => {
+    setProjectRoles(prev => ({ ...prev, [projectId]: role }))
   }
 
   // Filter projects where selected user is not already a member
@@ -267,7 +278,7 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
           )}
           <div className="grid gap-2">
             <Label htmlFor="project">Projects</Label>
-            <ScrollArea className="h-50 w-full border rounded-md p-2">
+            <ScrollArea className="h-60 w-full border rounded-md p-2">
               <div className="space-y-1">
                 {availableProjects.length > 0 ? (
                   availableProjects.map(p => {
@@ -275,21 +286,43 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
                     return (
                       <div 
                         key={p.id} 
-                        className={`group flex items-center justify-between p-2 rounded-md hover:bg-slate-50 cursor-pointer transition-all ${
+                        className={`group flex items-center justify-between p-2 rounded-md hover:bg-slate-50 transition-all ${
                           isSelected ? 'bg-blue-50/50 border-blue-100 border shadow-sm' : 'border border-transparent'
                         }`}
-                        onClick={() => toggleProject(p.id.toString())}
                       >
-                        <div className="flex flex-col min-w-0">
+                        <div 
+                          className="flex flex-col min-w-0 flex-1 cursor-pointer"
+                          onClick={() => toggleProject(p.id.toString())}
+                        >
                           <span className={`text-sm font-medium truncate ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}>
                             {p.name}
                           </span>
                           <span className="text-[10px] text-slate-500">{p.version_name}</span>
                         </div>
-                        <div className={`h-5 w-5 rounded-md border flex items-center justify-center transition-colors ${
-                          isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'
-                        }`}>
-                          {isSelected && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
+                        <div className="flex items-center gap-2">
+                          {isSelected && (
+                            <Select 
+                              value={projectRoles[p.id.toString()] || "viewer"} 
+                              onValueChange={(val) => handleRoleChangeForProject(p.id.toString(), val)}
+                            >
+                              <SelectTrigger className="h-7 w-22 text-[10px] bg-white border-blue-200">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="viewer">Viewer</SelectItem>
+                                <SelectItem value="editor">Editor</SelectItem>
+                                <SelectItem value="admin">Admin</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                          <div 
+                            className={`h-5 w-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
+                              isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'
+                            }`}
+                            onClick={() => toggleProject(p.id.toString())}
+                          >
+                            {isSelected && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
+                          </div>
                         </div>
                       </div>
                     )
@@ -305,27 +338,16 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {selectedProjectIds.map(id => {
                   const p = projects.find(proj => proj.id.toString() === id)
+                  const role = projectRoles[id] || "viewer"
                   return p ? (
-                    <Badge key={id} variant="secondary" className="bg-blue-50 text-blue-600 border-blue-100 font-normal px-2 py-0">
+                    <Badge key={id} variant="secondary" className="bg-blue-50 text-blue-600 border-blue-100 font-normal px-2 py-0 flex items-center gap-1">
                       {p.name}
+                      <span className="text-[10px] opacity-70 font-bold uppercase">({role})</span>
                     </Badge>
                   ) : null
                 })}
               </div>
             )}
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="role">Role</Label>
-            <Select value={selectedRole} onValueChange={setSelectedRole}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="viewer">Viewer</SelectItem>
-                <SelectItem value="editor">Editor</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </div>
         <DialogFooter>
