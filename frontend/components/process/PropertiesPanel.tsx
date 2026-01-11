@@ -242,13 +242,12 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
       }
   };
 
-  const handleAddRole = () => {
-    if (newRoleName.trim()) {
+  const handleMemberSelectionForRoles = (userId: string) => {
+    if (userId && !formData.roles?.includes(userId)) {
       setFormData((prev: any) => ({
         ...prev,
-        roles: [...(prev.roles || []), newRoleName.trim()]
+        roles: [...(prev.roles || []), userId]
       }));
-      setNewRoleName('');
     }
   };
 
@@ -612,7 +611,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                 onClick={() => setShowRolesManager(true)}
                 disabled={isPublished}
               >
-                Manage Roles
+                Manage Members
               </Button>
             </div>
 
@@ -620,25 +619,27 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
               {/* Responsibility */}
               <div className="space-y-3">
                 <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Responsibility</Label>
-                {projectId ? (
-                  <Select 
-                    onValueChange={(val) => handleUserSelection('responsibility', val)}
-                    value={formData.responsibility?.[0] || ""}
-                    disabled={isPublished || loadingUsers}
-                  >
-                    <SelectTrigger className={cn("bg-white border-slate-200", (isPublished || loadingUsers) && "bg-slate-50 opacity-70")}>
-                      <SelectValue placeholder={loadingUsers ? 'Loading users...' : 'Select responsible user'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableUsers.map(u => (
-                        <SelectItem key={u.clerk_id} value={u.clerk_id}>
-                          {u.first_name} {u.last_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <div className="text-[10px] text-slate-400 italic px-1">User assignment available in project mode</div>
+                <Select 
+                  onValueChange={(val) => handleUserSelection('responsibility', val)}
+                  value={formData.responsibility?.[0] || ""}
+                  disabled={isPublished || loadingUsers}
+                >
+                  <SelectTrigger className={cn("bg-white border-slate-200", (isPublished || loadingUsers) && "bg-slate-50 opacity-70")}>
+                    <SelectValue placeholder={loadingUsers ? 'Loading users...' : 'Select responsible user'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableUsers.map(u => (
+                      <SelectItem key={u.clerk_id} value={u.clerk_id}>
+                        <div className="flex flex-col py-1">
+                          <span className="font-medium text-sm">{u.first_name} {u.last_name}</span>
+                          <span className="text-[10px] text-slate-400 font-normal">{u.email}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!projectId && !loadingUsers && availableUsers.length === 0 && (
+                  <div className="text-[10px] text-slate-400 italic px-1">No users found to assign.</div>
                 )}
                 <Textarea
                   value={formData.responsibilitiesDescription}
@@ -655,54 +656,56 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
               {/* Support */}
               <div className="space-y-3">
                 <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Support</Label>
-                {projectId ? (
-                  <>
-                    <Select 
-                      onValueChange={(val) => handleUserSelection('support', val)}
-                      value=""
-                      disabled={isPublished || loadingUsers}
-                    >
-                      <SelectTrigger className={cn("bg-white border-slate-200", (isPublished || loadingUsers) && "bg-slate-50 opacity-70")}>
-                        <SelectValue placeholder="Add support user..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableUsers.map(u => (
-                          <SelectItem key={u.clerk_id} value={u.clerk_id}>
-                            {u.first_name} {u.last_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    
-                    {formData.support?.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {formData.support?.map((userId: string, i: number) => {
-                          const user = availableUsers.find(u => u.clerk_id === userId);
-                          const displayName = user 
-                            ? (user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email)
-                            : userId;
-                          
-                          return (
-                            <Badge key={i} variant="secondary" className="bg-slate-100 text-slate-700 border-slate-200 py-1 pl-2 pr-1 flex items-center gap-1">
-                              {displayName}
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="h-4 w-4 rounded-full hover:bg-slate-200"
-                                onClick={() => handleArrayRemove('support', i)}
-                                disabled={isPublished}
-                              >
-                                <X size={10} />
-                              </Button>
-                            </Badge>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="text-[10px] text-slate-400 italic px-1">User assignment available in project mode</div>
-                )}
+                <>
+                  <Select 
+                    onValueChange={(val) => handleUserSelection('support', val)}
+                    value=""
+                    disabled={isPublished || loadingUsers}
+                  >
+                    <SelectTrigger className={cn("bg-white border-slate-200", (isPublished || loadingUsers) && "bg-slate-50 opacity-70")}>
+                      <SelectValue placeholder="Add support user..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableUsers.map(u => (
+                        <SelectItem key={u.clerk_id} value={u.clerk_id}>
+                          <div className="flex flex-col py-1">
+                            <span className="font-medium text-sm">{u.first_name} {u.last_name}</span>
+                            <span className="text-[10px] text-slate-400 font-normal">{u.email}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  
+                  {formData.support?.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {formData.support?.map((userId: string, i: number) => {
+                        const user = availableUsers.find(u => u.clerk_id === userId);
+                        const displayName = user 
+                          ? (user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email)
+                          : userId;
+                        
+                        return (
+                          <Badge key={i} variant="secondary" className="bg-slate-100 text-slate-700 border-slate-200 py-1 pl-2 pr-1 flex items-center gap-1">
+                            <div className="flex flex-col">
+                              <span className="text-xs leading-tight">{displayName}</span>
+                              {user && <span className="text-[8px] text-slate-400 leading-tight">{user.email}</span>}
+                            </div>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-4 w-4 rounded-full hover:bg-slate-200 ml-1"
+                              onClick={() => handleArrayRemove('support', i)}
+                              disabled={isPublished}
+                            >
+                              <X size={10} />
+                            </Button>
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
                 <Textarea
                   value={formData.rolesDescription}
                   onChange={(e) => handleChange('rolesDescription', e.target.value)}
@@ -964,46 +967,67 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
               <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
                 <Users size={18} />
               </div>
-              Manage Roles
+              Manage Members
             </DialogTitle>
           </DialogHeader>
           <div className="py-4 space-y-4">
-            <div className="flex gap-2">
-              <Input 
-                value={newRoleName}
-                onChange={(e) => setNewRoleName(e.target.value)}
-                placeholder="Enter role name (e.g. Developer)"
-                className="bg-slate-50 border-slate-200"
-                onKeyDown={(e) => e.key === 'Enter' && handleAddRole()}
-              />
-              <Button onClick={handleAddRole} size="icon" className="bg-blue-600 hover:bg-blue-700">
-                <Plus size={18} />
-              </Button>
+            <div className="flex flex-col gap-2">
+              <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Add Member</Label>
+              <Select 
+                onValueChange={(val) => handleMemberSelectionForRoles(val)}
+                value=""
+                disabled={isPublished || loadingUsers}
+              >
+                <SelectTrigger className={cn("bg-slate-50 border-slate-200", (isPublished || loadingUsers) && "bg-slate-50 opacity-70")}>
+                  <SelectValue placeholder={loadingUsers ? 'Loading...' : 'Select a person to add...'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableUsers.map(u => (
+                    <SelectItem key={u.clerk_id} value={u.clerk_id}>
+                      <div className="flex flex-col py-0.5">
+                        <span className="font-medium text-sm">{u.first_name} {u.last_name}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">{u.email}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
               {formData.roles?.length > 0 ? (
-                formData.roles.map((role: string, i: number) => (
-                  <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 group hover:border-blue-100 transition-all">
-                    <span className="text-sm font-semibold text-slate-700">{role}</span>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-8 w-8 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                      onClick={() => handleRemoveRole(i)}
-                    >
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                ))
+                formData.roles.map((role: string, i: number) => {
+                  const user = availableUsers.find(u => u.clerk_id === role);
+                  const displayName = user 
+                    ? `${user.first_name} ${user.last_name || ''}`.trim()
+                    : role;
+                  const email = user?.email;
+
+                  return (
+                    <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 group hover:border-blue-100 transition-all">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-semibold text-slate-700">{displayName}</span>
+                        {email && <span className="text-[10px] text-slate-400">{email}</span>}
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                        onClick={() => handleRemoveRole(i)}
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  );
+                })
               ) : (
                 <div className="text-center py-8 border-2 border-dashed border-slate-100 rounded-xl">
-                  <p className="text-xs text-slate-400 italic">No roles added yet</p>
+                  <p className="text-xs text-slate-400 italic">No members added yet</p>
                 </div>
               )}
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => setShowRolesManager(false)} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+            <Button onClick={() => setShowRolesManager(false)} className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200">
               Done
             </Button>
           </DialogFooter>

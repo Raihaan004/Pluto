@@ -253,7 +253,7 @@ export const NodeInfoDialog = ({ isOpen, onClose, data, users = [], onViewSheet,
               )}
 
               {/* Team Section */}
-              {(data.responsibility?.length > 0 || data.support?.length > 0) && (
+              {(data.responsibility?.length > 0 || data.support?.length > 0 || data.roles?.length > 0) && (
                 <div className="space-y-4">
                   <Separator className="bg-slate-200/60" />
                   <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
@@ -313,6 +313,30 @@ export const NodeInfoDialog = ({ isOpen, onClose, data, users = [], onViewSheet,
                                     {user.role}
                                   </Badge>
                                 )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {data.roles?.length > 0 && (
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Members</Label>
+                        <div className="space-y-2">
+                          {data.roles.map((r: string, i: number) => {
+                            const user = getUserDetails(r);
+                            return (
+                              <div key={i} className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                                <div className="h-10 w-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-600 font-bold border border-slate-100">
+                                  {user.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-bold text-slate-900 truncate">{user.name}</p>
+                                  <p className="text-[10px] text-slate-400 flex items-center gap-1 truncate">
+                                    <Mail size={10} /> {user.email}
+                                  </p>
+                                </div>
                               </div>
                             );
                           })}

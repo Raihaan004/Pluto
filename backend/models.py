@@ -54,6 +54,11 @@ class CollaboratorAdd(BaseModel):
     user_id: str
     role: str
 
+class ConnectionJiraTrigger(BaseModel):
+    activity_data: dict
+    work_product_data: dict
+    metadata: dict
+
 class ProcessPackage(ProcessPackageCreate):
     id: int
     created_at: str

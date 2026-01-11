@@ -2,10 +2,10 @@ from fastapi import FastAPI, HTTPException, Header, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from database import supabase
-from models import UserCreate, RoleUpdate, ProcessPackageCreate, ProcessRename, ProcessVersionCreate, ProjectCreate, ProjectUpdate, CollaboratorAdd
+from models import UserCreate, RoleUpdate, ProcessPackageCreate, ProcessRename, ProcessVersionCreate, ProjectCreate, ProjectUpdate, CollaboratorAdd, ConnectionJiraTrigger
 from typing import Optional
 from datetime import datetime
-from jira_utils import sync_task_to_jira
+from jira_utils import sync_task_to_jira, create_connection_jira_ticket
 
 import os
 from dotenv import load_dotenv
@@ -604,6 +604,32 @@ def delete_project(project_id: int, requester_id: Optional[str] = Header(None, a
         raise he
     except Exception as e:
         print(f"Error deleting project: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/jira/connection-trigger")
+def trigger_connection_jira(trigger: ConnectionJiraTrigger):
+    try:
+        # Fetch users to resolve names
+        user_response = supabase.table("users").select("clerk_id", "first_name", "last_name").execute()
+        user_map = {}
+        if user_response.data:
+            for u in user_response.data:
+                name = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
+                user_map[u["clerk_id"]] = name or u["clerk_id"]
+
+        jira_key = create_connection_jira_ticket(
+            trigger.activity_data, 
+            trigger.work_product_data, 
+            trigger.metadata, 
+            user_map
+        )
+        
+        if not jira_key:
+            raise HTTPException(status_code=500, detail="Failed to create Jira ticket")
+            
+        return {"status": "success", "jira_key": jira_key}
+    except Exception as e:
+        print(f"Error in connection trigger: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

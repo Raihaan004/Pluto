@@ -13,6 +13,7 @@ import { useNavigation, useNavigationState, useNavigationDispatch } from '@/cont
 import { ProcessProvider, useProcessContext } from '@/context/ProcessContext';
 import { useCustomNodeStates } from '@/hooks/useCustomNodeStates';
 import { useHelperLines } from '@/hooks/useHelperLines';
+import { useUndoRedo } from '@/hooks/useUndoRedo';
 import { HelperLines } from '@/components/process/HelperLines';
 import { jsPDF } from 'jspdf';
 import { toPng } from 'html-to-image';
@@ -577,8 +578,7 @@ export default function CreateProcessPage() {
   }, [role]);
 
   // History for Undo/Redo
-  const [history, setHistory] = useState<{nodes: Node[], edges: Edge[]}[]>([]);
-  const [future, setFuture] = useState<{nodes: Node[], edges: Edge[]}[]>([]);
+  const { takeSnapshot, undo, redo, canUndo, canRedo } = useUndoRedo();
   
   // Refs to always have latest state in callbacks without re-creating them
   const nodesRef = useRef(nodes);
@@ -636,24 +636,37 @@ export default function CreateProcessPage() {
   // Save history on every change
   const saveHistory = useCallback(() => {
     if (isReadOnly) return;
-    const currentNodes = nodesRef.current;
-    const currentEdges = edgesRef.current;
-    
-    setHistory(prev => {
-      // Only save if different from last history entry to avoid duplicates
-      const lastEntry = prev[prev.length - 1];
-      const entryToSave = { 
-        nodes: JSON.parse(JSON.stringify(currentNodes)), 
-        edges: JSON.parse(JSON.stringify(currentEdges)) 
-      };
-      
-      if (!lastEntry || JSON.stringify(lastEntry) !== JSON.stringify(entryToSave)) {
-        return [...prev, entryToSave];
-      }
-      return prev;
-    });
-    setFuture([]);
-  }, [isReadOnly]);
+    takeSnapshot(nodesRef.current, edgesRef.current);
+  }, [isReadOnly, takeSnapshot]);
+
+  const handleTriggerConnectionJira = useCallback(async (activityNode: any, wpNode: any) => {
+    try {
+        const metadata = {
+            project_name: projectName,
+            project_id: projectId || processId,
+        };
+
+        const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/jira/connection-trigger`, {
+            activity_data: activityNode.data,
+            work_product_data: wpNode.data,
+            metadata: metadata
+        });
+
+        if (response.data.jira_key) {
+            toast.success(`Connection automated! Jira ticket created: ${response.data.jira_key}`);
+            
+            // Also update the activity node with the Jira ID if it doesn't have one
+            if (!activityNode.data.jira_issue_id) {
+                setNodes(nds => nds.map(n => n.id === activityNode.id ? {
+                    ...n, 
+                    data: { ...n.data, jira_issue_id: response.data.jira_key }
+                } : n));
+            }
+        }
+    } catch (error) {
+        console.error("Failed to trigger Jira automation:", error);
+    }
+  }, [projectName, projectId, processId, setNodes]);
 
   const onConnect = useCallback((params: any) => {
     saveHistory();
@@ -669,7 +682,26 @@ export default function CreateProcessPage() {
     };
     setEdges((eds) => addEdge(edgeParams, eds));
     checkForChanges();
-  }, [edgeStyle, setEdges, saveHistory, checkForChanges]);
+
+    // Trigger Jira automation if activity connects to work product
+    const sourceNode = nodes.find(n => n.id === params.source);
+    const targetNode = nodes.find(n => n.id === params.target);
+
+    if (sourceNode && targetNode) {
+        const isActivitySource = sourceNode.type === 'activity';
+        const isWPSource = sourceNode.type === 'workProduct';
+        const isActivityTarget = targetNode.type === 'activity';
+        const isWPTarget = targetNode.type === 'workProduct';
+
+        if ((isActivitySource && isWPTarget) || (isWPSource && isActivityTarget)) {
+            const activityNode = isActivitySource ? sourceNode : targetNode;
+            const wpNode = isWPSource ? sourceNode : targetNode;
+            
+            // Trigger Jira ticket
+            handleTriggerConnectionJira(activityNode, wpNode);
+        }
+    }
+  }, [edgeStyle, setEdges, saveHistory, checkForChanges, nodes, handleTriggerConnectionJira]);
 
   const onNodeDragStart = useCallback(() => {
     if (isReadOnly) return;
@@ -731,28 +763,20 @@ export default function CreateProcessPage() {
   }, [nodes, edges, sheets, projectName, originalSavedState, projectId, checkForChanges]);
 
   const handleUndo = useCallback(() => {
-    if (history.length === 0 || isReadOnly) return;
-    const lastHistory = history[history.length - 1];
-    setNodes(lastHistory.nodes);
-    setEdges(lastHistory.edges);
-    setHistory(history.slice(0, -1));
-    setFuture([...future, { nodes, edges }]);
+    if (!canUndo || isReadOnly) return;
+    undo(nodesRef.current, edgesRef.current, setNodes, setEdges);
     setTimeout(() => {
       checkForChanges();
     }, 100);
-  }, [history, future, nodes, edges, setNodes, setEdges, isReadOnly, checkForChanges]);
+  }, [canUndo, isReadOnly, undo, setNodes, setEdges, checkForChanges]);
 
   const handleRedo = useCallback(() => {
-    if (future.length === 0 || isReadOnly) return;
-    const lastFuture = future[future.length - 1];
-    setNodes(lastFuture.nodes);
-    setEdges(lastFuture.edges);
-    setHistory([...history, lastFuture]);
-    setFuture(future.slice(0, -1));
+    if (!canRedo || isReadOnly) return;
+    redo(nodesRef.current, edgesRef.current, setNodes, setEdges);
     setTimeout(() => {
       checkForChanges();
     }, 100);
-  }, [future, history, nodes, edges, setNodes, setEdges, isReadOnly, checkForChanges]);
+  }, [canRedo, isReadOnly, redo, setNodes, setEdges, checkForChanges]);
 
   const loadData = useCallback(async () => {
     if (!user) return;
@@ -1444,6 +1468,22 @@ export default function CreateProcessPage() {
 
       // Check for Ctrl/Cmd + key combinations
       const isModifierPressed = event.ctrlKey || event.metaKey;
+
+      if (isModifierPressed) {
+        if (event.key === 'z' || event.key === 'Z') {
+          event.preventDefault();
+          if (event.shiftKey) {
+            handleRedo();
+          } else {
+            handleUndo();
+          }
+          return;
+        } else if (event.key === 'y' || event.key === 'Y') {
+          event.preventDefault();
+          handleRedo();
+          return;
+        }
+      }
       
       // Toolbox shortcuts (single key, no modifier needed when canvas is focused)
       if (!isModifierPressed && rfInstance) {
@@ -1556,7 +1596,7 @@ export default function CreateProcessPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleUndo}
-            disabled={history.length === 0}
+            disabled={!canUndo}
             className="p-2 hover:bg-gray-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
             title="Undo"
           >
@@ -1564,7 +1604,7 @@ export default function CreateProcessPage() {
           </button>
           <button
             onClick={handleRedo}
-            disabled={future.length === 0}
+            disabled={!canRedo}
             className="p-2 hover:bg-gray-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
             title="Redo"
           >
