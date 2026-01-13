@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -6,6 +6,7 @@ import {
   useReactFlow,
   Edge,
   getSmoothStepPath,
+  Position,
 } from 'reactflow';
 
 const HANDLE_SIZE = 10;
@@ -15,15 +16,24 @@ const SNAP_DISTANCE = 15;
 
 type Point = { x: number; y: number };
 
+interface DragInfo {
+  index: number;
+  type: 'point' | 'midpoint' | 'segment';
+  currentPos: Point;
+  points: Point[];
+}
+
 const parsePathPoints = (path: string): Point[] => {
   const points: Point[] = [];
-  // Match both M and L commands and their coordinates
-  const matches = path.match(/[ML]\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/g);
+  // Robust match for M/L commands and their coordinates
+  const matches = path.match(/[ML][^ML]+/g);
   
   if (matches) {
     matches.forEach(match => {
-      const parts = match.replace(/[ML]/, '').split(',');
-      points.push({ x: parseFloat(parts[0]), y: parseFloat(parts[1]) });
+      const coords = match.slice(1).trim().split(/[,\s]+/).filter(Boolean);
+      if (coords.length >= 2) {
+        points.push({ x: parseFloat(coords[0]), y: parseFloat(coords[1]) });
+      }
     });
   }
   return points;
@@ -44,6 +54,7 @@ export default function EditableStepEdge({
   animated,
 }: EdgeProps) {
   const { setEdges, screenToFlowPosition } = useReactFlow();
+  const [dragInfo, setDragInfo] = useState<DragInfo | null>(null);
   const points: Point[] = data?.points || [];
 
   // Logic to accurately match React Flow's getSmoothStepPath behavior
@@ -67,9 +78,10 @@ export default function EditableStepEdge({
   }, [sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition]);
 
   const getPointsForInteraction = useCallback(() => {
+    if (dragInfo) return dragInfo.points;
     if (points.length > 0) return points;
     return getDefaultPoints();
-  }, [points, getDefaultPoints]);
+  }, [points, dragInfo, getDefaultPoints]);
 
   const effectivePoints = getPointsForInteraction();
   const allPoints = [{ x: sourceX, y: sourceY }, ...effectivePoints, { x: targetX, y: targetY }];
@@ -90,7 +102,7 @@ export default function EditableStepEdge({
 
   // Construct the path
   let path = '';
-  if (points.length === 0) {
+  if (points.length === 0 && !dragInfo) {
     [path] = getSmoothStepPath({
       sourceX,
       sourceY,
@@ -103,22 +115,11 @@ export default function EditableStepEdge({
   } else {
     // If we have points, we draw exactly as they are defined for full control
     path = `M ${sourceX},${sourceY}`;
-    points.forEach((p) => {
+    effectivePoints.forEach((p) => {
       path += ` L ${p.x},${p.y}`;
     });
     path += ` L ${targetX},${targetY}`;
   }
-
-  // If there are no points, we calculate an initial step path representation
-  // but only when starting an interaction
-  const ensureInitialPoints = useCallback(() => {
-    if (points.length === 0) {
-      const initialPoints = getDefaultPoints();
-      updatePoints(initialPoints);
-      return initialPoints;
-    }
-    return points;
-  }, [points, sourceX, sourceY, targetX, targetY, sourcePosition]);
 
   const updatePoints = useCallback(
     (newPoints: Point[]) => {
@@ -158,10 +159,19 @@ export default function EditableStepEdge({
       else if (Math.abs(newPos.y - next.y) < 20) newPos.y = next.y;
 
       newPoints[index] = newPos;
-      updatePoints(newPoints);
+      setDragInfo({
+        index,
+        type: 'point',
+        currentPos: newPos,
+        points: newPoints
+      });
     };
 
     const onMouseUp = () => {
+      setDragInfo((curr) => {
+        if (curr) updatePoints(curr.points);
+        return null;
+      });
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
@@ -199,10 +209,20 @@ export default function EditableStepEdge({
 
       const currentPoints = [...startPoints];
       currentPoints.splice(index, 0, ...newPointsToAdd);
-      updatePoints(currentPoints);
+      
+      setDragInfo({
+        index: index + 1, // Focus on the new "elbow"
+        type: 'midpoint',
+        currentPos: newPos,
+        points: currentPoints
+      });
     };
 
     const onMouseUp = () => {
+      setDragInfo((curr) => {
+        if (curr) updatePoints(curr.points);
+        return null;
+      });
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
@@ -246,10 +266,19 @@ export default function EditableStepEdge({
         }
       }
       
-      updatePoints(nextPoints);
+      setDragInfo({
+        index: segmentIndex,
+        type: 'segment',
+        currentPos: newPos,
+        points: nextPoints
+      });
     };
 
     const onMouseUp = () => {
+      setDragInfo((curr) => {
+        if (curr) updatePoints(curr.points);
+        return null;
+      });
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
@@ -260,20 +289,40 @@ export default function EditableStepEdge({
 
   const onPointDoubleClick = (index: number, event: React.MouseEvent) => {
     event.stopPropagation();
-    const newPoints = points.filter((_, i) => i !== index);
+    const startPoints = points.length > 0 ? [...points] : getDefaultPoints();
+    const newPoints = startPoints.filter((_, i) => i !== index);
     updatePoints(newPoints);
   };
 
   const edgeColor = data?.edgeStyle === 'red-dashed' ? '#ef4444' : '#2563eb';
   const midpointColor = data?.edgeStyle === 'red-dashed' ? '#fca5a5' : '#93c5fd';
 
+  // Preview path during drag
+  const previewPath = dragInfo ? (
+     `M ${sourceX},${sourceY} ` + dragInfo.points.map(p => `L ${p.x},${p.y}`).join(' ') + ` L ${targetX},${targetY}`
+  ) : null;
+
   return (
     <>
       <BaseEdge 
         path={path} 
         markerEnd={markerEnd} 
-        style={style} 
+        style={{
+            ...style,
+            opacity: dragInfo ? 0.3 : 1
+        }} 
       />
+
+      {previewPath && (
+        <path
+          d={previewPath}
+          fill="none"
+          stroke={edgeColor}
+          strokeWidth={2}
+          strokeDasharray="5,5"
+          pointerEvents="none"
+        />
+      )}
       
       {/* Invisible Interactive Segments (Anywhere dragging) */}
       <EdgeLabelRenderer>
@@ -295,17 +344,35 @@ export default function EditableStepEdge({
                 pointerEvents: 'all',
                 cursor: isHorizontal ? 'ns-resize' : 'ew-resize',
                 zIndex: 999,
-                // background: 'rgba(255,0,0,0.1)', // Uncomment to debug hit areas
               }}
               onMouseDown={(event) => onSegmentDrag(i, event)}
             />
           );
         })}
 
+        {dragInfo && (
+            <div
+                style={{
+                    position: 'absolute',
+                    transform: `translate(${dragInfo.currentPos.x + 10}px, ${dragInfo.currentPos.y - 25}px)`,
+                    background: 'rgba(0,0,0,0.7)',
+                    color: 'white',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                    pointerEvents: 'none',
+                    zIndex: 2000,
+                    whiteSpace: 'nowrap'
+                }}
+            >
+                {Math.round(dragInfo.currentPos.x)}, {Math.round(dragInfo.currentPos.y)}
+            </div>
+        )}
+
         {selected && (
           <>
-            {/* Existing Points */}
-        {points.map((point, index) => (
+            {/* Existing and Automatic/Default Points */}
+        {effectivePoints.map((point, index) => (
           <div
             key={`point-${index}`}
             style={{
@@ -327,7 +394,7 @@ export default function EditableStepEdge({
         ))}
 
             {/* Midpoints (Virtual Handles) */}
-            {segments.map((midpoint, i) => (
+            {!dragInfo && segments.map((midpoint, i) => (
               <div
                 key={`midpoint-${i}`}
                 style={{

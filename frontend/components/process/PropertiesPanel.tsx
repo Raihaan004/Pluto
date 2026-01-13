@@ -282,16 +282,20 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
     // I will add a simple check if we can get it, otherwise rely on responsibility.
   };
 
+  const isResponsible = formData.responsibility?.includes(user?.id);
+  const isSupport = formData.support?.includes(user?.id);
+  const canEdit = !isPublished || isResponsible || isSupport;
+
   const handleStateChange = (newState: string) => {
     // We need to check permissions here.
     const currentUser = availableUsers.find(u => u.clerk_id === user?.id);
     const isAdmin = currentUser?.role === 'admin';
     const isOwner = projectOwnerId === user?.id;
     
-    const responsibleId = formData.responsibility?.[0];
-    const isResponsible = responsibleId === user?.id;
+    const isResponsibleLocal = formData.responsibility?.includes(user?.id);
+    const isSupportLocal = formData.support?.includes(user?.id);
 
-    if (isAdmin || isOwner || isResponsible || !responsibleId) {
+    if (isAdmin || isOwner || isResponsibleLocal || isSupportLocal || !formData.responsibility?.length) {
         handleChange('state', newState);
     }
   };
@@ -301,20 +305,19 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
     const isAdmin = currentUser?.role === 'admin';
     const isOwner = projectOwnerId === user?.id;
     
-    const responsibleId = formData.responsibility?.[0];
-    const isResponsible = responsibleId === user?.id;
-    const isSupport = formData.support?.includes(user?.id);
+    const isResponsibleLocal = formData.responsibility?.includes(user?.id);
+    const isSupportLocal = formData.support?.includes(user?.id);
 
     if (field === 'authorComments') {
-        if (isAdmin || isOwner || isResponsible || isSupport) {
+        if (isAdmin || isOwner || isResponsibleLocal || isSupportLocal) {
             handleChange(field, value);
         }
     } else if (field === 'verificationComments') {
-        if (isAdmin || isResponsible || isSupport) {
+        if (isAdmin || isResponsibleLocal || isSupportLocal) {
             handleChange(field, value);
         }
     } else if (field === 'reviewerComments') {
-        if (isAdmin || isOwner || isResponsible || isSupport) {
+        if (isAdmin || isOwner || isResponsibleLocal || isSupportLocal) {
             handleChange(field, value);
         }
     } else {
@@ -326,26 +329,26 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
     const currentUser = availableUsers.find(u => u.clerk_id === user?.id);
     const isAdmin = currentUser?.role === 'admin';
     const isOwner = projectOwnerId === user?.id;
-    const isResponsible = formData.responsibility?.[0] === user?.id;
-    const isSupport = formData.support?.includes(user?.id);
-    return isAdmin || isOwner || isResponsible || isSupport;
+    const isResponsibleLocal = formData.responsibility?.includes(user?.id);
+    const isSupportLocal = formData.support?.includes(user?.id);
+    return isAdmin || isOwner || isResponsibleLocal || isSupportLocal;
   };
 
   const canEditVerificationComments = () => {
     const currentUser = availableUsers.find(u => u.clerk_id === user?.id);
     const isAdmin = currentUser?.role === 'admin';
-    const isResponsible = formData.responsibility?.[0] === user?.id;
-    const isSupport = formData.support?.includes(user?.id);
-    return isAdmin || isResponsible || isSupport;
+    const isResponsibleLocal = formData.responsibility?.includes(user?.id);
+    const isSupportLocal = formData.support?.includes(user?.id);
+    return isAdmin || isResponsibleLocal || isSupportLocal;
   };
 
   const canEditReviewerComments = () => {
     const currentUser = availableUsers.find(u => u.clerk_id === user?.id);
     const isAdmin = currentUser?.role === 'admin';
     const isOwner = projectOwnerId === user?.id;
-    const isResponsible = formData.responsibility?.[0] === user?.id;
-    const isSupport = formData.support?.includes(user?.id);
-    return isAdmin || isOwner || isResponsible || isSupport;
+    const isResponsibleLocal = formData.responsibility?.includes(user?.id);
+    const isSupportLocal = formData.support?.includes(user?.id);
+    return isAdmin || isOwner || isResponsibleLocal || isSupportLocal;
   };
 
   const handleSave = async () => {
@@ -432,10 +435,10 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
             <Input
               value={formData.label}
               onChange={(e) => handleChange('label', e.target.value)}
-              disabled={isPublished}
+              disabled={!canEdit}
               className={cn(
                 "bg-white border-slate-200 focus:ring-blue-500/20 focus:border-blue-500 transition-all",
-                isPublished && "bg-slate-50 opacity-70"
+                !canEdit && "bg-slate-50 opacity-70"
               )}
               placeholder="Enter node label..."
             />
@@ -447,10 +450,10 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
               <Textarea
                 value={formData.description}
                 onChange={(e) => handleChange('description', e.target.value)}
-                disabled={isPublished}
+                disabled={!canEdit}
                 className={cn(
                   "bg-white border-slate-200 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-h-25 resize-none",
-                  isPublished && "bg-slate-50 opacity-70"
+                  !canEdit && "bg-slate-50 opacity-70"
                 )}
                 placeholder="Describe this node's purpose..."
               />
@@ -470,11 +473,11 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
               <Select
                 value={formData.linkedSheetId}
                 onValueChange={(val) => handleChange('linkedSheetId', val)}
-                disabled={isPublished}
+                disabled={!canEdit}
               >
                 <SelectTrigger className={cn(
                   "bg-white border-slate-200",
-                  isPublished && "bg-slate-50 opacity-70"
+                  !canEdit && "bg-slate-50 opacity-70"
                 )}>
                   <SelectValue placeholder="Select a sheet to link..." />
                 </SelectTrigger>
@@ -511,11 +514,11 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
               <Select
                 value={formData.state}
                 onValueChange={(val) => handleStateChange(val)}
-                disabled={!!(isPublished || (!canEditVerificationComments() && projectId && projectOwnerId !== user?.id))}
+                disabled={!canEdit}
               >
                 <SelectTrigger className={cn(
                   "bg-white border-slate-200",
-                  (isPublished || (!canEditVerificationComments() && projectId && projectOwnerId !== user?.id)) && "bg-slate-50 opacity-70"
+                  !canEdit && "bg-slate-50 opacity-70"
                 )}>
                   <SelectValue placeholder="Select state" />
                 </SelectTrigger>
@@ -609,7 +612,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                 size="sm" 
                 className="h-8 px-3 text-xs font-semibold text-blue-600 hover:bg-blue-50"
                 onClick={() => setShowRolesManager(true)}
-                disabled={isPublished}
+                disabled={!canEdit}
               >
                 Manage Members
               </Button>
@@ -622,9 +625,9 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                 <Select 
                   onValueChange={(val) => handleUserSelection('responsibility', val)}
                   value={formData.responsibility?.[0] || ""}
-                  disabled={isPublished || loadingUsers}
+                  disabled={!canEdit || loadingUsers}
                 >
-                  <SelectTrigger className={cn("bg-white border-slate-200", (isPublished || loadingUsers) && "bg-slate-50 opacity-70")}>
+                  <SelectTrigger className={cn("bg-white border-slate-200", (!canEdit || loadingUsers) && "bg-slate-50 opacity-70")}>
                     <SelectValue placeholder={loadingUsers ? 'Loading users...' : 'Select responsible user'} />
                   </SelectTrigger>
                   <SelectContent>
@@ -644,10 +647,10 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                 <Textarea
                   value={formData.responsibilitiesDescription}
                   onChange={(e) => handleChange('responsibilitiesDescription', e.target.value)}
-                  disabled={isPublished}
+                  disabled={!canEdit}
                   className={cn(
                     "bg-white border-slate-200 text-sm min-h-20 mt-2",
-                    isPublished && "bg-slate-50 opacity-70"
+                    !canEdit && "bg-slate-50 opacity-70"
                   )}
                   placeholder="Define specific responsibilities..."
                 />
@@ -660,9 +663,9 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                   <Select 
                     onValueChange={(val) => handleUserSelection('support', val)}
                     value=""
-                    disabled={isPublished || loadingUsers}
+                    disabled={!canEdit || loadingUsers}
                   >
-                    <SelectTrigger className={cn("bg-white border-slate-200", (isPublished || loadingUsers) && "bg-slate-50 opacity-70")}>
+                    <SelectTrigger className={cn("bg-white border-slate-200", (!canEdit || loadingUsers) && "bg-slate-50 opacity-70")}>
                       <SelectValue placeholder="Add support user..." />
                     </SelectTrigger>
                     <SelectContent>
@@ -696,7 +699,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                               size="icon" 
                               className="h-4 w-4 rounded-full hover:bg-slate-200 ml-1"
                               onClick={() => handleArrayRemove('support', i)}
-                              disabled={isPublished}
+                              disabled={!canEdit}
                             >
                               <X size={10} />
                             </Button>
@@ -709,10 +712,10 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                 <Textarea
                   value={formData.rolesDescription}
                   onChange={(e) => handleChange('rolesDescription', e.target.value)}
-                  disabled={isPublished}
+                  disabled={!canEdit}
                   className={cn(
                     "bg-white border-slate-200 text-sm min-h-20 mt-2",
-                    isPublished && "bg-slate-50 opacity-70"
+                    !canEdit && "bg-slate-50 opacity-70"
                   )}
                   placeholder="Define roles involved..."
                 />
@@ -734,18 +737,18 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                 <PopoverTrigger asChild>
                   <Button
                     variant={"outline"}
-                    disabled={isPublished}
+                    disabled={!canEdit}
                     className={cn(
                       "w-full justify-start text-left font-normal bg-white border-slate-200 hover:bg-slate-50",
                       !formData.deadline && "text-slate-400",
-                      isPublished && "bg-slate-50 opacity-70"
+                      !canEdit && "bg-slate-50 opacity-70"
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {formData.deadline ? format(formData.deadline, "PPP") : <span>Set a deadline</span>}
                   </Button>
                 </PopoverTrigger>
-                {!isPublished && (
+                {canEdit && (
                   <PopoverContent className="w-auto p-0" align="start">
                     <Calendar
                       mode="single"
@@ -772,7 +775,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                 variant="ghost" 
                 size="icon" 
                 onClick={() => openAddDialog('links')} 
-                disabled={isPublished}
+                disabled={!canEdit}
                 className="h-8 w-8 rounded-full text-blue-600 hover:bg-blue-50"
               >
                 <Plus size={16} />
@@ -795,7 +798,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                           {url}
                         </a>
                       </div>
-                      {!isPublished && (
+                      {canEdit && (
                         <Button 
                           variant="ghost" 
                           size="icon" 
@@ -833,7 +836,8 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                     type="color"
                     value={formData.backgroundColor || '#ffffff'}
                     onChange={(e) => handleChange('backgroundColor', e.target.value)}
-                    className="h-6 w-10 cursor-pointer rounded border-none bg-transparent"
+                    disabled={!canEdit}
+                    className={cn("h-6 w-10 cursor-pointer rounded border-none bg-transparent", !canEdit && "opacity-50 cursor-not-allowed")}
                   />
                   <span className="text-[10px] font-mono text-slate-500 uppercase">
                     {formData.backgroundColor || '#FFFFFF'}
@@ -847,7 +851,8 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                     type="color"
                     value={formData.textColor || '#000000'}
                     onChange={(e) => handleChange('textColor', e.target.value)}
-                    className="h-6 w-10 cursor-pointer rounded border-none bg-transparent"
+                    disabled={!canEdit}
+                    className={cn("h-6 w-10 cursor-pointer rounded border-none bg-transparent", !canEdit && "opacity-50 cursor-not-allowed")}
                   />
                   <span className="text-[10px] font-mono text-slate-500 uppercase">
                     {formData.textColor || '#000000'}
@@ -868,6 +873,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                         size="icon" 
                         className="h-8 w-8"
                         onClick={() => handleChange('fontSize', Math.max(8, formData.fontSize - 1))}
+                        disabled={!canEdit}
                       >
                         <Type size={14} className="scale-75" />
                       </Button>
@@ -877,6 +883,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                         size="icon" 
                         className="h-8 w-8"
                         onClick={() => handleChange('fontSize', Math.min(32, formData.fontSize + 1))}
+                        disabled={!canEdit}
                       >
                         <Type size={18} />
                       </Button>
@@ -887,6 +894,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                       size="icon" 
                       className={cn("h-8 w-8", formData.isBold && "bg-slate-100")}
                       onClick={() => handleChange('isBold', !formData.isBold)}
+                      disabled={!canEdit}
                     >
                       <span className="font-bold">B</span>
                     </Button>
@@ -901,6 +909,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                         variant={formData.alignment === 'left' ? "secondary" : "ghost"} 
                         size="icon" className="h-8 flex-1"
                         onClick={() => handleChange('alignment', 'left')}
+                        disabled={!canEdit}
                       >
                         <AlignLeft size={14} />
                       </Button>
@@ -908,6 +917,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                         variant={formData.alignment === 'center' ? "secondary" : "ghost"} 
                         size="icon" className="h-8 flex-1"
                         onClick={() => handleChange('alignment', 'center')}
+                        disabled={!canEdit}
                       >
                         <AlignCenter size={14} />
                       </Button>
@@ -915,6 +925,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                         variant={formData.alignment === 'right' ? "secondary" : "ghost"} 
                         size="icon" className="h-8 flex-1"
                         onClick={() => handleChange('alignment', 'right')}
+                        disabled={!canEdit}
                       >
                         <AlignRight size={14} />
                       </Button>
@@ -925,8 +936,9 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                     <Select
                       value={formData.verticalAlignment}
                       onValueChange={(val) => handleChange('verticalAlignment', val)}
+                      disabled={!canEdit}
                     >
-                      <SelectTrigger className="bg-white border-slate-200 h-10">
+                      <SelectTrigger className={cn("bg-white border-slate-200 h-10", !canEdit && "bg-slate-50 opacity-70")}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -976,9 +988,9 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
               <Select 
                 onValueChange={(val) => handleMemberSelectionForRoles(val)}
                 value=""
-                disabled={isPublished || loadingUsers}
+                disabled={!canEdit || loadingUsers}
               >
-                <SelectTrigger className={cn("bg-slate-50 border-slate-200", (isPublished || loadingUsers) && "bg-slate-50 opacity-70")}>
+                <SelectTrigger className={cn("bg-slate-50 border-slate-200", (!canEdit || loadingUsers) && "bg-slate-50 opacity-70")}>
                   <SelectValue placeholder={loadingUsers ? 'Loading...' : 'Select a person to add...'} />
                 </SelectTrigger>
                 <SelectContent>
@@ -1013,6 +1025,7 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
                         size="icon" 
                         className="h-8 w-8 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
                         onClick={() => handleRemoveRole(i)}
+                        disabled={!canEdit}
                       >
                         <Trash2 size={14} />
                       </Button>

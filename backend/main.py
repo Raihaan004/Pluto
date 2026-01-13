@@ -110,6 +110,8 @@ def get_user(clerk_id: str):
         if not response.data:
             raise HTTPException(status_code=404, detail="User not found")
         return response.data[0]
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

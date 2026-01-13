@@ -228,11 +228,14 @@ const ProcessCanvas = ({
       const isSupport = node.data.support?.includes(currentUser?.id);
       if (isResponsible || isSupport) {
         setSelectedNode(node);
+      } else {
+        // Fallback: Show read-only info dialog for users who aren't assigned
+        openNodeDialog(node.data);
       }
       return;
     }
     setSelectedNode(node);
-  }, [isReadOnly, currentUser]);
+  }, [isReadOnly, currentUser, openNodeDialog]);
 
   const onNodeDragStop = useCallback(() => {
     if (isReadOnly) return;
@@ -273,6 +276,21 @@ const ProcessCanvas = ({
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      // If read only, we only allow dragging for assigned nodes
+      if (isReadOnly) {
+        const draggingPositions = changes.filter(c => c.type === 'position' && (c as any).dragging);
+        if (draggingPositions.length > 0) {
+          const allAllowed = draggingPositions.every(change => {
+            const node = nodes.find(n => n.id === (change as any).id);
+            if (!node) return false;
+            const isResponsible = node.data?.responsibility?.includes(currentUser?.id);
+            const isSupport = node.data?.support?.includes(currentUser?.id);
+            return isResponsible || isSupport;
+          });
+          if (!allAllowed) return;
+        }
+      }
+
       let nextChanges = changes;
 
       // Handle alignment and snapping
@@ -333,7 +351,7 @@ const ProcessCanvas = ({
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
-                onNodesChange={isReadOnly ? noOpNodesChange : handleNodesChange}
+                onNodesChange={handleNodesChange}
                 onEdgesChange={isReadOnly ? noOpEdgesChange : (wrappedOnEdgesChange || onEdgesChange)}
                 onConnect={isReadOnly ? noOpConnect : onConnect}
                 onInit={setReactFlowInstance}
@@ -349,9 +367,9 @@ const ProcessCanvas = ({
                 onEdgeUpdate={onEdgeUpdate}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
-                nodesDraggable={!isReadOnly}
+                nodesDraggable={true}
                 nodesConnectable={!isReadOnly}
-                elementsSelectable={!isReadOnly}
+                elementsSelectable={true}
                 nodeExtent={undefined}
                 defaultEdgeOptions={{ 
                   type: 'editable-step',
@@ -374,7 +392,7 @@ const ProcessCanvas = ({
             </ReactFlow>
       </div>
 
-      {selectedNode && selectedNode.type !== 'swimLane' && (!isReadOnly || (selectedNode.data.responsibility?.includes(currentUser?.id) || selectedNode.data.support?.includes(currentUser?.id))) && (
+      {selectedNode && selectedNode.type !== 'swimLane' && (
         <PropertiesPanel 
             selectedNode={selectedNode} 
             onSave={handleSaveProperties} 
@@ -467,13 +485,17 @@ export default function CreateProcessPage() {
   const openNodeDialog = useCallback((data: any) => {
     const isResponsible = data.responsibility?.includes(user?.id);
     const isSupport = data.support?.includes(user?.id);
+    const isOwner = projectOwnerId === user?.id;
+    const isEditor = projectPermission === 'editor';
+    const isPublished = projectStatus === 'published';
     
     // Allow if user is owner/editor, OR if they are an assigned user on this node
-    if (projectPermission === 'viewer' && !isResponsible && !isSupport) return;
+    // OR if the project is published, we allow everyone to see the info dialog
+    if (projectPermission === 'viewer' && !isResponsible && !isSupport && !isPublished && !isOwner && !isEditor) return;
     
     setDialogData(data);
     setDialogOpen(true);
-  }, [projectPermission, user?.id]);
+  }, [projectPermission, user?.id, projectStatus, projectOwnerId]);
 
   const handleAddSheet = () => {
     const newSheetId = `sheet_${Date.now()}`;
@@ -639,34 +661,50 @@ export default function CreateProcessPage() {
     takeSnapshot(nodesRef.current, edgesRef.current);
   }, [isReadOnly, takeSnapshot]);
 
-  const handleTriggerConnectionJira = useCallback(async (activityNode: any, wpNode: any) => {
-    try {
-        const metadata = {
-            project_name: projectName,
-            project_id: projectId || processId,
-        };
+  const triggerJiraForSheets = useCallback(async (sheetsToProcess: ProcessSheet[]) => {
+    let createdCount = 0;
+    const newSheets = JSON.parse(JSON.stringify(sheetsToProcess));
 
-        const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/jira/connection-trigger`, {
-            activity_data: activityNode.data,
-            work_product_data: wpNode.data,
-            metadata: metadata
-        });
+    for (const sheet of newSheets) {
+      for (const edge of sheet.edges) {
+        const sourceNode = sheet.nodes.find((n: any) => n.id === edge.source);
+        const targetNode = sheet.nodes.find((n: any) => n.id === edge.target);
 
-        if (response.data.jira_key) {
-            toast.success(`Connection automated! Jira ticket created: ${response.data.jira_key}`);
-            
-            // Also update the activity node with the Jira ID if it doesn't have one
+        if (sourceNode && targetNode) {
+          const isActivitySource = sourceNode.type === 'activity';
+          const isWPSource = sourceNode.type === 'workProduct';
+          const isActivityTarget = targetNode.type === 'activity';
+          const isWPTarget = targetNode.type === 'workProduct';
+
+          if ((isActivitySource && isWPTarget) || (isWPSource && isActivityTarget)) {
+            const activityNode = isActivitySource ? sourceNode : targetNode;
+            const wpNode = isWPSource ? sourceNode : targetNode;
+
             if (!activityNode.data.jira_issue_id) {
-                setNodes(nds => nds.map(n => n.id === activityNode.id ? {
-                    ...n, 
-                    data: { ...n.data, jira_issue_id: response.data.jira_key }
-                } : n));
+              try {
+                const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/jira/connection-trigger`, {
+                    activity_data: activityNode.data,
+                    work_product_data: wpNode.data,
+                    metadata: {
+                        project_name: projectName,
+                        project_id: projectId || processId,
+                    }
+                });
+
+                if (response.data.jira_key) {
+                  activityNode.data.jira_issue_id = response.data.jira_key;
+                  createdCount++;
+                }
+              } catch (e) {
+                console.error("Failed to trigger Jira for connection", e);
+              }
             }
+          }
         }
-    } catch (error) {
-        console.error("Failed to trigger Jira automation:", error);
+      }
     }
-  }, [projectName, projectId, processId, setNodes]);
+    return { updatedSheets: newSheets, createdCount };
+  }, [projectName, projectId, processId]);
 
   const onConnect = useCallback((params: any) => {
     saveHistory();
@@ -682,26 +720,7 @@ export default function CreateProcessPage() {
     };
     setEdges((eds) => addEdge(edgeParams, eds));
     checkForChanges();
-
-    // Trigger Jira automation if activity connects to work product
-    const sourceNode = nodes.find(n => n.id === params.source);
-    const targetNode = nodes.find(n => n.id === params.target);
-
-    if (sourceNode && targetNode) {
-        const isActivitySource = sourceNode.type === 'activity';
-        const isWPSource = sourceNode.type === 'workProduct';
-        const isActivityTarget = targetNode.type === 'activity';
-        const isWPTarget = targetNode.type === 'workProduct';
-
-        if ((isActivitySource && isWPTarget) || (isWPSource && isActivityTarget)) {
-            const activityNode = isActivitySource ? sourceNode : targetNode;
-            const wpNode = isWPSource ? sourceNode : targetNode;
-            
-            // Trigger Jira ticket
-            handleTriggerConnectionJira(activityNode, wpNode);
-        }
-    }
-  }, [edgeStyle, setEdges, saveHistory, checkForChanges, nodes, handleTriggerConnectionJira]);
+  }, [edgeStyle, setEdges, saveHistory, checkForChanges]);
 
   const onNodeDragStart = useCallback(() => {
     if (isReadOnly) return;
@@ -939,10 +958,10 @@ export default function CreateProcessPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [processId, projectId, user?.id]); // Load when IDs change, not when loadData changes
 
-  // Fetch users for ShareProjectDialog - only when needed (when projectId exists)
+  // Fetch users for NodeInfoDialog and selection - fetch if we have any process or project
   useEffect(() => {
     const fetchUsers = async () => {
-      if (!user?.id || !projectId) return; // Only fetch if we have a project
+      if (!user?.id || (!projectId && !processId)) return;
       try {
         const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
           headers: { 'X-Clerk-User-Id': user.id }
@@ -953,7 +972,7 @@ export default function CreateProcessPage() {
       }
     };
     fetchUsers();
-  }, [user?.id, projectId]); // Only depend on user.id and projectId
+  }, [user?.id, projectId, processId]);
 
   // Handlers for ProcessSidebar
   const handleSaveVersion = useCallback(async () => {
@@ -1144,10 +1163,29 @@ export default function CreateProcessPage() {
       let updatedSheets = [...sheets];
       if (currentSheetIndex !== -1) {
         updatedSheets[currentSheetIndex] = { ...updatedSheets[currentSheetIndex], nodes, edges };
+      }
+
+      // Trigger Jira tickets if publishing
+      let finalSheets = updatedSheets;
+      if (status === 'published') {
+        const { updatedSheets: sheetsWithJira, createdCount } = await triggerJiraForSheets(updatedSheets);
+        finalSheets = sheetsWithJira;
+        
+        // Sync local state if Jira tickets were created so the UI updates
+        setSheets(finalSheets);
+        const activeSheetAfterJira = finalSheets.find((s: any) => s.id === activeSheetId);
+        if (activeSheetAfterJira) {
+          setNodes(activeSheetAfterJira.nodes);
+        }
+        
+        if (createdCount > 0) {
+          toast.success(`Created ${createdCount} Jira tickets during publish`);
+        }
+      } else {
         setSheets(updatedSheets);
       }
 
-      const sheetsToSave = updatedSheets.map(s => ({
+      const sheetsToSave = finalSheets.map(s => ({
         id: s.id,
         name: s.name,
         nodes: s.nodes, // Includes all nodes (including lanes) with their current positions
@@ -1200,13 +1238,32 @@ export default function CreateProcessPage() {
       let updatedSheets = [...sheets];
       if (currentSheetIndex !== -1) {
         updatedSheets[currentSheetIndex] = { ...updatedSheets[currentSheetIndex], nodes, edges };
+      }
+
+      // Trigger Jira tickets if publishing
+      let finalSheets = updatedSheets;
+      if (status === 'published') {
+        const { updatedSheets: sheetsWithJira, createdCount } = await triggerJiraForSheets(updatedSheets);
+        finalSheets = sheetsWithJira;
+        
+        // Sync local state
+        setSheets(finalSheets);
+        const activeSheetAfterJira = finalSheets.find((s: any) => s.id === activeSheetId);
+        if (activeSheetAfterJira) {
+          setNodes(activeSheetAfterJira.nodes);
+        }
+
+        if (createdCount > 0) {
+          toast.success(`Created ${createdCount} Jira tickets during publish`);
+        }
+      } else {
         setSheets(updatedSheets);
       }
 
       const payload = {
         user_id: user.id,
         name: projectName,
-        sheets: updatedSheets.map(s => ({
+        sheets: finalSheets.map(s => ({
           id: s.id,
           name: s.name,
           nodes: s.nodes,
@@ -1228,7 +1285,7 @@ export default function CreateProcessPage() {
       }
       
       // Update original saved state
-      const sheetsToSave = updatedSheets.map(s => ({
+      const sheetsToSave = finalSheets.map(s => ({
         id: s.id,
         name: s.name,
         nodes: JSON.parse(JSON.stringify(s.nodes)),

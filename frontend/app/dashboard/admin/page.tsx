@@ -246,7 +246,7 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-106.25">
+      <DialogContent className="sm:max-w-[450px]">
         <DialogHeader>
           <DialogTitle>{targetUser ? "Assign to Project" : "Assign User to Project"}</DialogTitle>
           <DialogDescription>
@@ -258,18 +258,21 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
           </DialogDescription>
         </DialogHeader>
         
-        <div className="grid gap-4 py-4">
+        <div className="grid gap-5 py-4">
           {!targetUser && (
             <div className="grid gap-2">
-              <Label htmlFor="user">User</Label>
+              <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Select User</Label>
               <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                <SelectTrigger>
+                <SelectTrigger className="bg-slate-50 border-slate-200">
                   <SelectValue placeholder="Select a user..." />
                 </SelectTrigger>
                 <SelectContent>
                   {users.map(u => (
                     <SelectItem key={u.clerk_id} value={u.clerk_id}>
-                      {u.first_name} {u.last_name} ({u.email})
+                      <div className="flex flex-col py-0.5">
+                        <span className="font-medium text-sm">{u.first_name} {u.last_name}</span>
+                        <span className="text-[10px] text-slate-400">{u.email}</span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -277,35 +280,47 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
             </div>
           )}
           <div className="grid gap-2">
-            <Label htmlFor="project">Projects</Label>
-            <ScrollArea className="h-60 w-full border rounded-md p-2">
-              <div className="space-y-1">
+            <Label className="text-xs font-semibold text-slate-500 uppercase ml-1">Available Projects</Label>
+            <ScrollArea className="h-64 w-full border border-slate-200 rounded-xl bg-slate-50/30">
+              <div className="p-3 space-y-2">
                 {availableProjects.length > 0 ? (
                   availableProjects.map(p => {
                     const isSelected = selectedProjectIds.includes(p.id.toString());
                     return (
                       <div 
                         key={p.id} 
-                        className={`group flex items-center justify-between p-2 rounded-md hover:bg-slate-50 transition-all ${
-                          isSelected ? 'bg-blue-50/50 border-blue-100 border shadow-sm' : 'border border-transparent'
+                        className={`group flex items-center justify-between p-3 rounded-xl transition-all border ${
+                          isSelected 
+                            ? 'bg-white border-blue-200 shadow-sm ring-1 ring-blue-100' 
+                            : 'bg-white border-slate-100 hover:border-slate-200'
                         }`}
                       >
                         <div 
-                          className="flex flex-col min-w-0 flex-1 cursor-pointer"
+                          className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
                           onClick={() => toggleProject(p.id.toString())}
                         >
-                          <span className={`text-sm font-medium truncate ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}>
-                            {p.name}
-                          </span>
-                          <span className="text-[10px] text-slate-500">{p.version_name}</span>
+                          <div 
+                            className={`flex-shrink-0 h-5 w-5 rounded-md border flex items-center justify-center transition-all ${
+                              isSelected ? 'bg-blue-600 border-blue-600 shadow-sm' : 'bg-white border-slate-300'
+                            }`}
+                          >
+                            {isSelected && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            <span className={`text-sm font-semibold truncate ${isSelected ? 'text-slate-900' : 'text-slate-700'}`}>
+                              {p.name}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-medium">{p.version_name}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {isSelected && (
+                        
+                        {isSelected && (
+                          <div className="flex items-center gap-2 pl-3 ml-auto border-l border-slate-100">
                             <Select 
                               value={projectRoles[p.id.toString()] || "viewer"} 
                               onValueChange={(val) => handleRoleChangeForProject(p.id.toString(), val)}
                             >
-                              <SelectTrigger className="h-7 w-22 text-[10px] bg-white border-blue-200">
+                              <SelectTrigger className="h-8 w-24 text-[11px] bg-slate-50 border-slate-200 hover:bg-slate-100 font-medium">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -314,35 +329,35 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
                                 <SelectItem value="admin">Admin</SelectItem>
                               </SelectContent>
                             </Select>
-                          )}
-                          <div 
-                            className={`h-5 w-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
-                              isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'
-                            }`}
-                            onClick={() => toggleProject(p.id.toString())}
-                          >
-                            {isSelected && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
                           </div>
-                        </div>
+                        )}
                       </div>
                     )
                   })
                 ) : (
-                  <div className="text-sm text-slate-400 p-8 text-center mt-4">
-                    {selectedUserId ? "No available projects for this user" : "Select a user first"}
+                  <div className="text-center py-12">
+                    <div className="p-3 bg-slate-100 rounded-full w-fit mx-auto mb-3">
+                      <Plus className="h-5 w-5 text-slate-400" />
+                    </div>
+                    <p className="text-xs text-slate-400 font-medium">
+                      {selectedUserId ? "No projects available to assign" : "Select a user to see projects"}
+                    </p>
                   </div>
                 )}
               </div>
             </ScrollArea>
+            
             {selectedProjectIds.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2">
+              <div className="flex flex-wrap gap-2 mt-3 p-3 bg-blue-50/50 border border-blue-100 rounded-xl">
                 {selectedProjectIds.map(id => {
                   const p = projects.find(proj => proj.id.toString() === id)
                   const role = projectRoles[id] || "viewer"
                   return p ? (
-                    <Badge key={id} variant="secondary" className="bg-blue-50 text-blue-600 border-blue-100 font-normal px-2 py-0 flex items-center gap-1">
-                      {p.name}
-                      <span className="text-[10px] opacity-70 font-bold uppercase">({role})</span>
+                    <Badge key={id} variant="secondary" className="bg-white text-blue-600 border-blue-200 py-1 pl-2 pr-1.5 flex items-center gap-1.5 shadow-sm">
+                      <span className="text-xs font-semibold">{p.name}</span>
+                      <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 text-[9px] font-bold px-1 py-0 border-none shadow-none uppercase">
+                        {role}
+                      </Badge>
                     </Badge>
                   ) : null
                 })}
@@ -350,12 +365,14 @@ function ProjectAssignmentDialog({ targetUser, users, projects, onUpdate }: { ta
             )}
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
+        <DialogFooter className="gap-2 sm:gap-0 mt-2">
+          <Button variant="outline" onClick={() => setIsOpen(false)} className="rounded-xl border-slate-200">
+            Cancel
+          </Button>
           <Button 
             onClick={handleAddProject} 
             disabled={selectedProjectIds.length === 0 || !selectedUserId || isAdding} 
-            className="bg-blue-600 hover:bg-blue-700"
+            className="rounded-xl bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-200"
           >
             {isAdding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
             Assign User
