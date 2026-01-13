@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { Search, Book, FileText, Users, Settings, MessageCircle, ExternalLink, CheckCircle2, AlertCircle, HelpCircle } from "lucide-react"
+import { Search, Book, FileText, Users, MessageCircle, ExternalLink, CheckCircle2, AlertCircle, HelpCircle } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -259,27 +259,6 @@ export default function HelpPage() {
               <Button variant="outline" className="w-full bg-transparent border-blue-400 text-white hover:bg-blue-700">
                 View Documentation <ExternalLink className="ml-2 h-4 w-4" />
               </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="border-gray-200 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-gray-500">
-                <Settings className="h-4 w-4" />
-                System Status
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
-                  </span>
-                  Operational
-                </div>
-                <span className="text-xs text-gray-400">Updated 2m ago</span>
-              </div>
             </CardContent>
           </Card>
         </div>
