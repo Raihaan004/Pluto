@@ -8,6 +8,7 @@ import {
   getSmoothStepPath,
   Position,
 } from 'reactflow';
+import { useProcessContext } from '@/context/ProcessContext';
 
 const HANDLE_SIZE = 10;
 const MIDPOINT_HANDLE_SIZE = 8;
@@ -53,6 +54,7 @@ export default function EditableStepEdge({
   selected,
   animated,
 }: EdgeProps) {
+  const { isPublished } = useProcessContext();
   const { setEdges, screenToFlowPosition } = useReactFlow();
   const [dragInfo, setDragInfo] = useState<DragInfo | null>(null);
   const points: Point[] = data?.points || [];
@@ -326,7 +328,7 @@ export default function EditableStepEdge({
       
       {/* Invisible Interactive Segments (Anywhere dragging) */}
       <EdgeLabelRenderer>
-        {segments.map((seg, i) => {
+        {!isPublished && segments.map((seg, i) => {
           const isHorizontal = Math.abs(seg.p1.y - seg.p2.y) < 2;
           const left = Math.min(seg.p1.x, seg.p2.x);
           const top = Math.min(seg.p1.y, seg.p2.y);
@@ -369,7 +371,7 @@ export default function EditableStepEdge({
             </div>
         )}
 
-        {selected && (
+        {selected && !isPublished && (
           <>
             {/* Existing and Automatic/Default Points */}
         {effectivePoints.map((point, index) => (

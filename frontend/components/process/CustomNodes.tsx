@@ -19,7 +19,10 @@ const getHeaderFontSize = (width?: number) => {
 };
 
 const MultiHandles = ({ colorClass }: { colorClass: string }) => {
-  const baseClasses = `w-2 h-2 ${colorClass} opacity-0 group-hover:opacity-100 transition-opacity`;
+  const { isPublished } = useProcessContext();
+  
+  // Handles must exist for edges to connect/render, but we hide them when published
+  const baseClasses = `w-2 h-2 ${colorClass} opacity-0 transition-opacity ${isPublished ? 'pointer-events-none' : 'group-hover:opacity-100'}`;
   const positions = [10, 20, 30, 40, 50, 60, 70, 80, 90];
   
   return (
@@ -136,10 +139,11 @@ const StatusIndicator = ({ data }: { data: any }) => {
 };
 
 const WorkProductNode = ({ data, selected, width, height }: any) => {
+  const { isPublished } = useProcessContext();
   const fontSize = getFontSize(width, height);
   return (
     <>
-      <NodeResizer color="#2563eb" isVisible={selected} minWidth={100} minHeight={50} />
+      <NodeResizer color="#2563eb" isVisible={!isPublished && selected} minWidth={100} minHeight={50} />
       <div 
         className="px-8 py-2 shadow-md rounded-md border-2 w-full h-full flex items-center justify-center relative group"
         style={{ 
@@ -168,10 +172,11 @@ const WorkProductNode = ({ data, selected, width, height }: any) => {
 };
 
 const ActivityNode = ({ data, selected, width, height }: any) => {
+  const { isPublished } = useProcessContext();
   const fontSize = getFontSize(width, height);
   return (
     <>
-      <NodeResizer color="#ca8a04" isVisible={selected} minWidth={100} minHeight={50} />
+      <NodeResizer color="#ca8a04" isVisible={!isPublished && selected} minWidth={100} minHeight={50} />
       <div 
         className="px-8 py-2 shadow-md rounded-md border-2 w-full h-full flex items-center justify-center relative group"
         style={{ 
@@ -200,10 +205,11 @@ const ActivityNode = ({ data, selected, width, height }: any) => {
 };
 
 const DecisionNode = ({ data, selected, width, height }: any) => {
+  const { isPublished } = useProcessContext();
   const fontSize = getFontSize(width, height);
   return (
     <>
-      <NodeResizer color="#ea580c" isVisible={selected} minWidth={100} minHeight={100} />
+      <NodeResizer color="#ea580c" isVisible={!isPublished && selected} minWidth={100} minHeight={100} />
       <div className="w-full h-full relative flex items-center justify-center group">
         <svg 
           className="absolute inset-0 w-full h-full overflow-visible"
@@ -240,24 +246,28 @@ const DecisionNode = ({ data, selected, width, height }: any) => {
               {data.label}
             </div>
         </div>
-        <Handle type="target" position={Position.Top} id="t-top" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Handle type="source" position={Position.Top} id="s-top" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Handle type="target" position={Position.Bottom} id="t-bottom" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Handle type="source" position={Position.Bottom} id="s-bottom" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Handle type="target" position={Position.Left} id="t-left" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Handle type="source" position={Position.Left} id="s-left" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Handle type="target" position={Position.Right} id="t-right" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Handle type="source" position={Position.Right} id="s-right" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+        {/* Handles must always exist for edges to render, but we hide them when published */}
+        <div className={isPublished ? "opacity-0 pointer-events-none" : ""}>
+          <Handle type="target" position={Position.Top} id="t-top" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <Handle type="source" position={Position.Top} id="s-top" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <Handle type="target" position={Position.Bottom} id="t-bottom" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <Handle type="source" position={Position.Bottom} id="s-bottom" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <Handle type="target" position={Position.Left} id="t-left" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <Handle type="source" position={Position.Left} id="s-left" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <Handle type="target" position={Position.Right} id="t-right" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <Handle type="source" position={Position.Right} id="s-right" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+        </div>
       </div>
     </>
   );
 };
 
 const ProcessNode = ({ data, selected, width, height }: any) => {
+  const { isPublished } = useProcessContext();
   const fontSize = getFontSize(width, height);
   return (
     <>
-      <NodeResizer color="#16a34a" isVisible={selected} minWidth={100} minHeight={50} />
+      <NodeResizer color="#16a34a" isVisible={!isPublished && selected} minWidth={100} minHeight={50} />
       <div 
         className="px-8 py-2 shadow-md rounded-md border-2 w-full h-full flex items-center justify-center relative group"
         style={{ 
@@ -286,10 +296,11 @@ const ProcessNode = ({ data, selected, width, height }: any) => {
 };
 
 const DocumentNode = ({ data, selected, width, height }: any) => {
+  const { isPublished } = useProcessContext();
   const fontSize = getFontSize(width, height);
   return (
     <>
-      <NodeResizer color="#0891b2" isVisible={selected} minWidth={100} minHeight={50} />
+      <NodeResizer color="#0891b2" isVisible={!isPublished && selected} minWidth={100} minHeight={50} />
       <div 
         className="px-8 py-2 shadow-md rounded-none border-2 w-full h-full flex items-center justify-center relative group"
         style={{ 
@@ -319,12 +330,13 @@ const DocumentNode = ({ data, selected, width, height }: any) => {
 };
 
 const SwimLaneNode = ({ id, data, selected, width, height }: any) => {
-  const { setNodes } = useProcessContext();
+  const { setNodes, isPublished } = useProcessContext();
   const [label, setLabel] = useState(data.label);
   const isHorizontal = data.orientation === 'horizontal';
   const fontSize = isHorizontal ? getHeaderFontSize(height) : getHeaderFontSize(width);
 
   const handleLabelChange = (newLabel: string) => {
+    if (isPublished) return;
     setLabel(newLabel);
     if (setNodes) {
       setNodes((nds) =>
@@ -340,6 +352,7 @@ const SwimLaneNode = ({ id, data, selected, width, height }: any) => {
 
   const handleRotate = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isPublished) return;
     if (setNodes) {
       setNodes((nds) =>
         nds.map((node) => {
@@ -360,53 +373,61 @@ const SwimLaneNode = ({ id, data, selected, width, height }: any) => {
     }
   };
 
+  const labelContent = (
+    <div 
+      className={`font-bold transition-colors flex items-center justify-center gap-2 ${isPublished ? 'cursor-default' : 'cursor-pointer hover:text-blue-600'} ${isHorizontal ? '-rotate-90 whitespace-nowrap' : ''}`}
+      style={{ 
+        color: data.textColor || '#555555',
+        fontSize: fontSize,
+        width: isHorizontal ? height : 'auto'
+      }}
+    >
+      {data.label}
+      {!isPublished && <Edit2 className={`w-3 h-3 opacity-0 group-hover:opacity-100 ${isHorizontal ? 'rotate-90' : ''}`} />}
+    </div>
+  );
+
   return (
     <>
-      <NodeResizer isVisible={selected} minWidth={isHorizontal ? 400 : 200} minHeight={isHorizontal ? 200 : 400} />
+      <NodeResizer isVisible={!isPublished && selected} minWidth={isHorizontal ? 400 : 200} minHeight={isHorizontal ? 200 : 400} />
       <div 
         className={`w-full h-full rounded-lg border-2 border-dashed bg-gray-100/50 flex ${isHorizontal ? 'flex-row' : 'flex-col'}`}
         style={{ borderColor: data.color || '#cccccc', zIndex: -1 }}
       >
         <div className={`relative ${isHorizontal ? 'w-12 h-full border-r' : 'w-full h-10 border-b'} bg-gray-200/50 flex items-center justify-center group transition-all`}>
-          <Popover>
-            <PopoverTrigger asChild>
-              <div 
-                className={`font-bold cursor-pointer hover:text-blue-600 transition-colors flex items-center justify-center gap-2 ${isHorizontal ? '-rotate-90 whitespace-nowrap' : ''}`}
-                style={{ 
-                  color: data.textColor || '#555555',
-                  fontSize: fontSize,
-                  width: isHorizontal ? height : 'auto'
-                }}
-              >
-                {data.label}
-                <Edit2 className={`w-3 h-3 opacity-0 group-hover:opacity-100 ${isHorizontal ? 'rotate-90' : ''}`} />
-              </div>
-            </PopoverTrigger>
-            <PopoverContent className="w-64">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <h4 className="font-medium text-sm">Edit Lane Label</h4>
-                  <Input 
-                    value={label} 
-                    onChange={(e) => handleLabelChange(e.target.value)}
-                    placeholder="Enter lane name..."
-                    autoFocus
-                  />
+          {isPublished ? (
+            labelContent
+          ) : (
+            <Popover>
+              <PopoverTrigger asChild>
+                {labelContent}
+              </PopoverTrigger>
+              <PopoverContent className="w-64">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-sm">Edit Lane Label</h4>
+                    <Input 
+                      value={label} 
+                      onChange={(e) => handleLabelChange(e.target.value)}
+                      placeholder="Enter lane name..."
+                      autoFocus
+                    />
+                  </div>
+                  <div className="pt-2 border-t">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full flex items-center gap-2"
+                      onClick={handleRotate}
+                    >
+                      <RotateCw className="w-4 h-4" />
+                      Rotate to {isHorizontal ? 'Vertical' : 'Horizontal'}
+                    </Button>
+                  </div>
                 </div>
-                <div className="pt-2 border-t">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="w-full flex items-center gap-2"
-                    onClick={handleRotate}
-                  >
-                    <RotateCw className="w-4 h-4" />
-                    Rotate to {isHorizontal ? 'Vertical' : 'Horizontal'}
-                  </Button>
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
+              </PopoverContent>
+            </Popover>
+          )}
         </div>
         <div className="grow" />
       </div>
@@ -415,10 +436,11 @@ const SwimLaneNode = ({ id, data, selected, width, height }: any) => {
 };
 
 const TextBoxNode = ({ data, selected, width, height }: any) => {
+  const { isPublished } = useProcessContext();
   const fontSize = getFontSize(width, height);
   return (
     <>
-      <NodeResizer color="#94a3b8" isVisible={selected} minWidth={50} minHeight={30} />
+      <NodeResizer color="#94a3b8" isVisible={!isPublished && selected} minWidth={50} minHeight={30} />
       <div 
         className="px-4 py-2 w-full h-full flex items-center justify-center relative group"
         style={{ 

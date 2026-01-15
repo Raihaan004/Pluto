@@ -3,7 +3,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Plus, FileSpreadsheet, Layout, Undo, Redo, Trash2, Edit2, Check, X, Users, ChevronRight, History, Download, Settings, Save } from 'lucide-react';
+import { Plus, FileSpreadsheet, Layout, Undo, Redo, Trash2, Edit2, Check, X, Users, ChevronRight, History, Download, Settings, Save, Rocket, Loader2, Cloud } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useUser } from '@clerk/nextjs';
@@ -223,6 +223,12 @@ const ProcessCanvas = ({
   );
 
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
+    // Navigate to linked sheet if it exists and project is published
+    if (isPublished && node.data.linkedSheetId && node.data.linkedSheetId !== 'none') {
+      handleSwitchSheet(node.data.linkedSheetId);
+      return;
+    }
+
     if (isReadOnly) {
       const isResponsible = node.data.responsibility?.includes(currentUser?.id);
       const isSupport = node.data.support?.includes(currentUser?.id);
@@ -235,7 +241,7 @@ const ProcessCanvas = ({
       return;
     }
     setSelectedNode(node);
-  }, [isReadOnly, currentUser, openNodeDialog]);
+  }, [isReadOnly, currentUser, openNodeDialog, handleSwitchSheet]);
 
   const onNodeDragStop = useCallback(() => {
     if (isReadOnly) return;
@@ -346,7 +352,7 @@ const ProcessCanvas = ({
   );
 
   return (
-    <div className="grow h-full bg-gray-50 relative flex flex-col" ref={reactFlowWrapper}>
+    <div className={cn("grow h-full relative flex flex-col", isPublished ? "bg-white" : "bg-gray-50")} ref={reactFlowWrapper}>
       <div className="grow relative">
             <ReactFlow
                 nodes={nodes}
@@ -367,7 +373,7 @@ const ProcessCanvas = ({
                 onEdgeUpdate={onEdgeUpdate}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
-                nodesDraggable={true}
+                nodesDraggable={!isReadOnly}
                 nodesConnectable={!isReadOnly}
                 elementsSelectable={true}
                 nodeExtent={undefined}
@@ -386,7 +392,7 @@ const ProcessCanvas = ({
             >
 
                 <Controls />
-                <Background color="#aaa" gap={16} />
+                {!isPublished && <Background color="#aaa" gap={16} />}
                 <MiniMap />
                 <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
             </ReactFlow>
@@ -445,6 +451,7 @@ export default function CreateProcessPage() {
 
   const [activeSheetId, setActiveSheetId] = useState('parent');
   const [isSaving, setIsSaving] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
   const [versions, setVersions] = useState<{ name: string; created_at: string; sheets: ProcessSheet[] }[]>([]);
 
   // ReactFlow state for the ACTIVE sheet
@@ -664,6 +671,7 @@ export default function CreateProcessPage() {
   const triggerJiraForSheets = useCallback(async (sheetsToProcess: ProcessSheet[]) => {
     let createdCount = 0;
     const newSheets = JSON.parse(JSON.stringify(sheetsToProcess));
+    const jiraPromises: Promise<boolean>[] = [];
 
     for (const sheet of newSheets) {
       for (const edge of sheet.edges) {
@@ -681,28 +689,37 @@ export default function CreateProcessPage() {
             const wpNode = isWPSource ? sourceNode : targetNode;
 
             if (!activityNode.data.jira_issue_id) {
-              try {
-                const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/jira/connection-trigger`, {
-                    activity_data: activityNode.data,
-                    work_product_data: wpNode.data,
-                    metadata: {
-                        project_name: projectName,
-                        project_id: projectId || processId,
-                    }
-                });
+              jiraPromises.push((async () => {
+                try {
+                  const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/jira/connection-trigger`, {
+                      activity_data: activityNode.data,
+                      work_product_data: wpNode.data,
+                      metadata: {
+                          project_name: projectName,
+                          project_id: projectId || processId,
+                      }
+                  });
 
-                if (response.data.jira_key) {
-                  activityNode.data.jira_issue_id = response.data.jira_key;
-                  createdCount++;
+                  if (response && response.data && response.data.jira_key) {
+                    activityNode.data.jira_issue_id = response.data.jira_key;
+                    return true;
+                  }
+                } catch (e) {
+                  console.error("Failed to trigger Jira for connection", e);
                 }
-              } catch (e) {
-                console.error("Failed to trigger Jira for connection", e);
-              }
+                return false;
+              })());
             }
           }
         }
       }
     }
+    
+    if (jiraPromises.length > 0) {
+      const results = await Promise.all(jiraPromises);
+      createdCount = results.filter(Boolean).length;
+    }
+    
     return { updatedSheets: newSheets, createdCount };
   }, [projectName, projectId, processId]);
 
@@ -1060,6 +1077,8 @@ export default function CreateProcessPage() {
   }, [isReadOnly, setNodes, setEdges]);
 
   const handleDownload = useCallback(() => {
+    setIsSaving(true);
+    setLoadingMessage('Exporting Project JSON...');
     // Save current sheet state before downloading (including all nodes with their positions)
     const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
     let updatedSheets = [...sheets];
@@ -1068,14 +1087,19 @@ export default function CreateProcessPage() {
       setSheets(updatedSheets);
     }
 
-    const dataStr = JSON.stringify({ sheets: updatedSheets }, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${projectName || 'process'}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+    // Slightly delayed to show the animation
+    setTimeout(() => {
+      const dataStr = JSON.stringify({ sheets: updatedSheets }, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${projectName || 'process'}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setIsSaving(false);
+      toast.success('Project exported successfully!');
+    }, 1500);
   }, [sheets, activeSheetId, nodes, edges, projectName]);
 
   const handleLoadVersion = useCallback((versionName: string) => {
@@ -1157,6 +1181,7 @@ export default function CreateProcessPage() {
     if (!projectId || (isReadOnly && !status) || (!hasUnsavedChanges && !status)) return;
     
     setIsSaving(true);
+    setLoadingMessage(status === 'published' ? 'Publishing Project...' : 'Saving Changes...');
     try {
       // Save current sheet state before saving (including all nodes with their positions)
       const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
@@ -1167,28 +1192,19 @@ export default function CreateProcessPage() {
 
       // Trigger Jira tickets if publishing
       let finalSheets = updatedSheets;
+      let jiraCreatedCount = 0;
       if (status === 'published') {
         const { updatedSheets: sheetsWithJira, createdCount } = await triggerJiraForSheets(updatedSheets);
         finalSheets = sheetsWithJira;
-        
-        // Sync local state if Jira tickets were created so the UI updates
-        setSheets(finalSheets);
-        const activeSheetAfterJira = finalSheets.find((s: any) => s.id === activeSheetId);
-        if (activeSheetAfterJira) {
-          setNodes(activeSheetAfterJira.nodes);
-        }
-        
-        if (createdCount > 0) {
-          toast.success(`Created ${createdCount} Jira tickets during publish`);
-        }
-      } else {
-        setSheets(updatedSheets);
+        jiraCreatedCount = createdCount;
+        // Small delay to ensure rocket animation is visible
+        await new Promise(resolve => setTimeout(resolve, 1500));
       }
 
       const sheetsToSave = finalSheets.map(s => ({
         id: s.id,
         name: s.name,
-        nodes: s.nodes, // Includes all nodes (including lanes) with their current positions
+        nodes: s.nodes, 
         edges: s.edges
       }));
 
@@ -1204,8 +1220,23 @@ export default function CreateProcessPage() {
 
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/project/${projectId}`, payload);
       
-      if (status) {
+      // Sync local state after successful save
+      if (status === 'published') {
+        setSheets(finalSheets);
+        const activeSheetAfterJira = finalSheets.find((s: any) => s.id === activeSheetId);
+        if (activeSheetAfterJira) {
+          setNodes(activeSheetAfterJira.nodes);
+        }
+        
+        if (jiraCreatedCount > 0) {
+          toast.success(`Created ${jiraCreatedCount} Jira tickets during publish`);
+        }
         setProjectStatus(status);
+      } else if (status) {
+        setProjectStatus(status);
+        setSheets(updatedSheets);
+      } else {
+        setSheets(updatedSheets);
       }
 
       // Update original saved state
@@ -1226,12 +1257,13 @@ export default function CreateProcessPage() {
     } finally {
       setIsSaving(false);
     }
-  }, [projectId, isReadOnly, hasUnsavedChanges, sheets, activeSheetId, nodes, edges, projectName, versionName]);
+  }, [projectId, isReadOnly, hasUnsavedChanges, sheets, activeSheetId, nodes, edges, projectName, versionName, triggerJiraForSheets, setHasUnsavedChanges]);
 
   const handleSaveProcess = useCallback(async (status: 'draft' | 'published') => {
     if (!user?.id || isReadOnly) return;
     
     setIsSaving(true);
+    setLoadingMessage(status === 'published' ? 'Publishing Process...' : 'Saving Draft...');
     try {
       // Save current sheet state before saving
       const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
@@ -1242,22 +1274,13 @@ export default function CreateProcessPage() {
 
       // Trigger Jira tickets if publishing
       let finalSheets = updatedSheets;
+      let jiraCreatedCount = 0;
       if (status === 'published') {
         const { updatedSheets: sheetsWithJira, createdCount } = await triggerJiraForSheets(updatedSheets);
         finalSheets = sheetsWithJira;
-        
-        // Sync local state
-        setSheets(finalSheets);
-        const activeSheetAfterJira = finalSheets.find((s: any) => s.id === activeSheetId);
-        if (activeSheetAfterJira) {
-          setNodes(activeSheetAfterJira.nodes);
-        }
-
-        if (createdCount > 0) {
-          toast.success(`Created ${createdCount} Jira tickets during publish`);
-        }
-      } else {
-        setSheets(updatedSheets);
+        jiraCreatedCount = createdCount;
+        // Small delay to ensure rocket animation is visible
+        await new Promise(resolve => setTimeout(resolve, 1500));
       }
 
       const payload = {
@@ -1284,6 +1307,18 @@ export default function CreateProcessPage() {
         }
       }
       
+      // Update local state after successful save
+      setSheets(finalSheets);
+      if (status === 'published') {
+        const activeSheetAfterJira = finalSheets.find((s: any) => s.id === activeSheetId);
+        if (activeSheetAfterJira) {
+          setNodes(activeSheetAfterJira.nodes);
+        }
+        if (jiraCreatedCount > 0) {
+          toast.success(`Created ${jiraCreatedCount} Jira tickets during publish`);
+        }
+      }
+
       // Update original saved state
       const sheetsToSave = finalSheets.map(s => ({
         id: s.id,
@@ -1304,7 +1339,7 @@ export default function CreateProcessPage() {
     } finally {
       setIsSaving(false);
     }
-  }, [user?.id, isReadOnly, sheets, activeSheetId, nodes, edges, projectName, processId, router]);
+  }, [user?.id, isReadOnly, sheets, activeSheetId, nodes, edges, projectName, processId, router, triggerJiraForSheets, setHasUnsavedChanges]);
 
   useEffect(() => {
     const saveWrapper = async () => {
@@ -1356,6 +1391,7 @@ export default function CreateProcessPage() {
     const margin = 10;
 
     setIsSaving(true);
+    setLoadingMessage('Generating PDF Report...');
 
     try {
       // Sort sheets to have 'parent' first
@@ -1603,8 +1639,9 @@ export default function CreateProcessPage() {
       setNodes={setNodes}
       edgeStyle={edgeStyle}
       setEdgeStyle={setEdgeStyle}
+      isPublished={projectStatus === 'published'}
     >
-    <div className="flex h-full flex-col bg-gray-50">
+    <div className={cn("flex h-full flex-col", projectStatus === 'published' ? "bg-white" : "bg-gray-50")}>
       {/* Header Bar */}
       <div className="flex items-center justify-between border-b p-3 bg-white">
         <div className="flex items-center gap-2">
@@ -1958,6 +1995,42 @@ export default function CreateProcessPage() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* Launching Loading Overlay */}
+    {isSaving && (
+      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-white/80 backdrop-blur-md overflow-hidden">
+        <div className="relative flex flex-col items-center">
+          {/* Drifting Clouds */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden h-[400px] w-screen left-1/2 -translate-x-1/2">
+            <Cloud className="absolute top-10 left-[-100px] text-blue-100 w-24 h-24 animate-cloud-drift opacity-60" />
+            <Cloud className="absolute top-40 left-[-200px] text-gray-100 w-16 h-16 animate-cloud-drift [animation-delay:0.5s] opacity-40" />
+            <Cloud className="absolute top-20 left-[-150px] text-blue-50 w-20 h-20 animate-cloud-drift [animation-delay:1.2s] opacity-50" />
+            <Cloud className="absolute top-60 left-[-300px] text-gray-200 w-32 h-32 animate-cloud-drift [animation-delay:0.8s] opacity-30" />
+          </div>
+
+          {/* Rocket Container */}
+          <div className="relative">
+            <div className="animate-rocket-vibrate">
+              <Rocket className="w-24 h-24 text-blue-600 rotate-[-45deg] drop-shadow-2xl" fill="currentColor" />
+            </div>
+            {/* Flame Effect */}
+            <div className="absolute -bottom-6 -left-2 w-8 h-12 bg-gradient-to-t from-orange-600 via-yellow-400 to-transparent rounded-full blur-sm animate-rocket-flame rotate-[135deg]" />
+            <div className="absolute -bottom-4 -left-0 w-4 h-8 bg-gradient-to-t from-red-600 via-orange-400 to-transparent rounded-full animate-rocket-flame [animation-delay:0.1s] rotate-[135deg]" />
+          </div>
+
+          {/* Status Text */}
+          <div className="mt-12 text-center">
+            <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              {loadingMessage || 'Processing...'}
+            </h3>
+            <p className="text-gray-500 mt-2 font-medium flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+              Launching your updates to the workspace
+            </p>
+          </div>
+        </div>
+      </div>
+    )}
 
     </ProcessProvider>
   );
