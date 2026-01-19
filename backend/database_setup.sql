@@ -115,6 +115,7 @@ create table if not exists public.projects (
   sheets jsonb not null default '[]'::jsonb,
   collaborators jsonb not null default '[]'::jsonb,
   status text default 'draft',
+  jira_project_key text, -- Link to Jira project
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );

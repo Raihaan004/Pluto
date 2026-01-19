@@ -422,7 +422,15 @@ const ProcessCanvas = ({
   );
 };
 
-export default function CreateProcessPage() {
+export default function CreateProcessPage({ 
+  initialProjectId = null, 
+  forceReadOnly = false, 
+  forcePublished = false 
+}: { 
+  initialProjectId?: string | null, 
+  forceReadOnly?: boolean, 
+  forcePublished?: boolean 
+}) {
   const { role, loading } = useUserRole();
   const { user } = useUser();
   const { hasUnsavedChanges } = useNavigationState();
@@ -438,7 +446,8 @@ export default function CreateProcessPage() {
   }, []);
   const searchParams = useSearchParams();
   const processId = searchParams.get('id');
-  const projectId = searchParams.get('projectId');
+  const queryProjectId = searchParams.get('projectId');
+  const projectId = initialProjectId || queryProjectId;
 
   // State for multiple sheets
   const [sheets, setSheets] = useState<ProcessSheet[]>([
@@ -466,6 +475,7 @@ export default function CreateProcessPage() {
   const [projectName, setProjectName] = useState('Create New Process');
   const [projectStatus, setProjectStatus] = useState<string>('draft');
   const [versionName, setVersionName] = useState<string | null>(null);
+  const [jiraProjectKey, setJiraProjectKey] = useState<string>('');
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editingProjectNameValue, setEditingProjectNameValue] = useState('');
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
@@ -596,11 +606,14 @@ export default function CreateProcessPage() {
   };
 
   const isReadOnly = useMemo(() => {
+    if (forceReadOnly) return true;
     if (projectId && projectPermission === null) return true;
     if (projectPermission === 'viewer') return true;
     if (projectStatus === 'published') return true;
     return false;
-  }, [projectId, projectPermission, projectStatus]);
+  }, [projectId, projectPermission, projectStatus, forceReadOnly]);
+
+  const isPublished = useMemo(() => forcePublished || projectStatus === 'published', [projectStatus, forcePublished]);
 
   const canUnlock = useMemo(() => {
     return role === 'admin';
@@ -827,6 +840,7 @@ export default function CreateProcessPage() {
         setProjectName(data.name || 'Untitled Project');
         setProjectStatus(data.status || 'draft');
         setVersionName(data.version_name || null);
+        setJiraProjectKey(data.jira_project_key || '');
         setProjectOwnerId(data.user_id || null);
         setProjectProcessId(data.process_id || null);
         
@@ -1211,7 +1225,8 @@ export default function CreateProcessPage() {
       const payload: any = {
         name: projectName,
         sheets: sheetsToSave,
-        version_name: versionName
+        version_name: versionName,
+        jira_project_key: jiraProjectKey
       };
 
       if (status) {
@@ -1639,9 +1654,9 @@ export default function CreateProcessPage() {
       setNodes={setNodes}
       edgeStyle={edgeStyle}
       setEdgeStyle={setEdgeStyle}
-      isPublished={projectStatus === 'published'}
+      isPublished={isPublished}
     >
-    <div className={cn("flex h-full flex-col", projectStatus === 'published' ? "bg-white" : "bg-gray-50")}>
+    <div className={cn("flex h-full flex-col", isPublished ? "bg-white" : "bg-gray-50")}>
       {/* Header Bar */}
       <div className="flex items-center justify-between border-b p-3 bg-white">
         <div className="flex items-center gap-2">
@@ -1807,7 +1822,7 @@ export default function CreateProcessPage() {
             setEdges={setEdges}
             users={users}
             isReadOnly={isReadOnly}
-            isPublished={projectStatus === 'published'}
+            isPublished={isPublished}
             projectId={projectId}
             projectOwnerId={projectOwnerId}
             currentUser={user}
@@ -1886,9 +1901,23 @@ export default function CreateProcessPage() {
         <DialogHeader>
           <DialogTitle>Publish Project</DialogTitle>
           <DialogDescription>
-            Are you sure you want to publish this project? Once published, it will be locked and no further changes can be made unless it is unlocked by an admin or editor.
+            Are you sure you want to publish this project? Once published, it will be locked and it will appear in the specified Jira Workspace.
           </DialogDescription>
         </DialogHeader>
+        <div className="py-4 space-y-4">
+          <div>
+            <Label htmlFor="jiraKey" className="mb-2 block font-medium">Jira Project Key (Optional)</Label>
+            <Input
+              id="jiraKey"
+              value={jiraProjectKey}
+              onChange={(e) => setJiraProjectKey(e.target.value.toUpperCase())}
+              placeholder="e.g. PROJ"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Link this Pluto project to a Jira Project Workspace.
+            </p>
+          </div>
+        </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setIsPublishDialogOpen(false)}>Cancel</Button>
           <Button 

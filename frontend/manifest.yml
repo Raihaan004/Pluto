@@ -1,0 +1,26 @@
+modules:
+  jira:projectPage:
+    - key: pluto-workspace-page
+      resource: main
+      resolver:
+        function: resolver
+      title: Pluto Workspace
+  function:
+    - key: resolver
+      handler: index.handler
+resources:
+  - key: main
+    path: public
+app:
+  runtime:
+    name: nodejs20.x
+  id: ari:cloud:ecosystem::app/d25c5c47-4c93-4d8e-9445-2867ed646eb8
+permissions:
+  scopes:
+    - read:jira-work
+    - read:jira-user
+  content:
+    styles:
+      - 'unsafe-inline'
+    scripts:
+      - 'unsafe-inline'

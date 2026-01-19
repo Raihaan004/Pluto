@@ -42,6 +42,7 @@ class ProjectCreate(BaseModel):
     name: str
     process_id: int
     version_name: str
+    jira_project_key: Optional[str] = None
 
 class ProjectUpdate(BaseModel):
     sheets: Optional[list[ProcessSheet]] = None
@@ -49,6 +50,7 @@ class ProjectUpdate(BaseModel):
     progress: Optional[int] = None
     version_name: Optional[str] = None
     status: Optional[str] = None
+    jira_project_key: Optional[str] = None
 
 class CollaboratorAdd(BaseModel):
     user_id: str

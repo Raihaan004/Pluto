@@ -125,8 +125,14 @@ def get_all_users(requester_id: Optional[str] = Header(None, alias="X-Clerk-User
     try:
         # Optimize: Select only necessary fields to reduce payload size
         response = supabase.table("users").select("clerk_id, first_name, last_name, email, image_url, role").order("created_at", desc=True).execute()
+        
+        if not response or not hasattr(response, 'data') or response.data is None:
+            return []
+            
         return response.data
     except Exception as e:
+        print(f"Error in get_all_users: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/users/{target_clerk_id}/role")
@@ -194,31 +200,46 @@ def get_processes(user_id: str):
     try:
         response = supabase.table("processes").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
         
+        if not response or not hasattr(response, 'data') or response.data is None:
+            return []
+            
         # Optimize payload: Remove heavy 'sheets' data
         cleaned_data = []
         for process in response.data:
-            p = process.copy()
-            p.pop("sheets", None)
-            
-            # Clean versions
-            if "versions" in p and isinstance(p["versions"], list):
-                for v in p["versions"]:
-                    if isinstance(v, dict):
-                        v.pop("sheets", None)
-            cleaned_data.append(p)
+            try:
+                p = process.copy()
+                p.pop("sheets", None)
+                
+                # Clean versions
+                if "versions" in p and isinstance(p["versions"], list):
+                    for v in p["versions"]:
+                        if isinstance(v, dict):
+                            v.pop("sheets", None)
+                cleaned_data.append(p)
+            except Exception as item_err:
+                print(f"Error processing process item: {item_err}")
+                continue
             
         return cleaned_data
     except Exception as e:
+        print(f"Error in get_processes for user {user_id}: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/process/{process_id}")
 def get_process(process_id: int):
     try:
         response = supabase.table("processes").select("*").eq("id", process_id).execute()
-        if not response.data:
+        
+        if not response or not hasattr(response, 'data') or not response.data:
             raise HTTPException(status_code=404, detail="Process not found")
+            
         return response.data[0]
+    except HTTPException as he:
+        raise he
     except Exception as e:
+        print(f"Error in get_process {process_id}: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/processes/{process_id}/rename")
@@ -347,15 +368,24 @@ def get_projects(user_id: str):
             f"user_id.eq.{user_id},collaborators.cs.{collaborator_tag}"
         ).order("created_at", desc=True).execute()
         
+        if not response or not hasattr(response, 'data') or response.data is None:
+            return []
+            
         # Optimize payload: Remove heavy 'sheets' data
         cleaned_data = []
         for project in response.data:
-            p = project.copy()
-            p.pop("sheets", None)
-            cleaned_data.append(p)
+            try:
+                p = project.copy()
+                p.pop("sheets", None)
+                cleaned_data.append(p)
+            except Exception as item_err:
+                print(f"Error processing project item: {item_err}")
+                continue
         
         return cleaned_data
     except Exception as e:
+        print(f"Error in get_projects for user {user_id}: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/projects/{project_id}/collaborators")
@@ -406,9 +436,38 @@ def remove_collaborator(project_id: int, user_id: str):
 def get_project(project_id: int):
     try:
         response = supabase.table("projects").select("*").eq("id", project_id).execute()
-        if not response.data:
+        
+        if not response or not hasattr(response, 'data') or not response.data:
             raise HTTPException(status_code=404, detail="Project not found")
+            
         return response.data[0]
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Error in get_project {project_id}: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/project/jira/{project_key}")
+def get_project_by_jira_key(project_key: str):
+    try:
+        response = supabase.table("projects").select("*").eq("jira_project_key", project_key).order("updated_at", desc=True).limit(1).execute()
+        
+        if not response or not hasattr(response, 'data') or not response.data:
+            return {"error": "No project linked to this Jira project key", "project_key": project_key}
+            
+        return response.data[0]
+    except Exception as e:
+        print(f"Error in get_project_by_jira_key {project_key}: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/project/{project_id}/jira")
+def update_project_jira_key(project_id: int, project_key: str):
+    try:
+        response = supabase.table("projects").update({"jira_project_key": project_key}).eq("id", project_id).execute()
+        return response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -536,15 +595,24 @@ def get_all_projects(requester_id: Optional[str] = Header(None, alias="X-Clerk-U
     try:
         response = supabase.table("projects").select("*").order("created_at", desc=True).execute()
         
+        if not response or not hasattr(response, 'data') or response.data is None:
+            return []
+            
         # Optimize payload: Remove heavy 'sheets' data
         cleaned_data = []
         for project in response.data:
-            p = project.copy()
-            p.pop("sheets", None)
-            cleaned_data.append(p)
+            try:
+                p = project.copy()
+                p.pop("sheets", None)
+                cleaned_data.append(p)
+            except Exception as item_err:
+                print(f"Error processing project item: {item_err}")
+                continue
             
         return cleaned_data
     except Exception as e:
+        print(f"Error in get_all_projects: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/calendar/events/{user_id}")
@@ -556,6 +624,9 @@ def get_calendar_events(user_id: str):
         response = supabase.table("projects").select("id, name, sheets").or_(
             f"user_id.eq.{user_id},collaborators.cs.{collaborator_tag}"
         ).execute()
+
+        if not response or not hasattr(response, 'data') or response.data is None:
+            return []
 
         events = []
         for project in response.data:
