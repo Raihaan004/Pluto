@@ -1,8 +1,12 @@
 from fastapi import FastAPI, HTTPException, Header, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from database import supabase
-from models import UserCreate, RoleUpdate, ProcessPackageCreate, ProcessRename, ProcessVersionCreate, ProjectCreate, ProjectUpdate, CollaboratorAdd, ConnectionJiraTrigger
+from database import supabase, admin_supabase
+from models import (
+    UserCreate, RoleUpdate, ProcessPackageCreate, ProcessRename, 
+    ProcessVersionCreate, ProjectCreate, ProjectUpdate, CollaboratorAdd, 
+    ConnectionJiraTrigger, LicenseVerify
+)
 from typing import Optional
 from datetime import datetime
 from jira_utils import sync_task_to_jira, create_connection_jira_ticket
@@ -143,6 +147,51 @@ def update_user_role(target_clerk_id: str, role_update: RoleUpdate, requester_id
         data = supabase.table("users").update({"role": role_update.role}).eq("clerk_id", target_clerk_id).execute()
         return {"status": "updated", "data": data.data}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/verify-license")
+def verify_license(verify: LicenseVerify):
+    try:
+        # 1. Search for organization in ADMIN database
+        # Org Name matches (Case Insensitive for name, but user wants Caps only input)
+        # Admin Email matches
+        org_res = admin_supabase.table("organizations").select("id, name").ilike("name", verify.org_name).eq("admin_email", verify.email_id).execute()
+        
+        if not org_res.data:
+            raise HTTPException(status_code=404, detail="Organization or Admin Email not found in Pluto Admin records.")
+        
+        org_id = org_res.data[0]["id"]
+        org_name_actual = org_res.data[0]["name"]
+
+        # 2. Check if the input org_name is strictly CAPS ONLY
+        if verify.org_name != verify.org_name.upper():
+            raise HTTPException(status_code=400, detail="Organization name must be entered in ALL CAPS.")
+
+        # 3. Verify License Key in ADMIN database
+        lic_res = admin_supabase.table("licenses").select("*").eq("organization_id", org_id).eq("license_key", verify.license_id).execute()
+        
+        if not lic_res.data:
+            raise HTTPException(status_code=403, detail="Invalid License ID for this organization.")
+
+        # 4. Success - Update the user in the MAIN database
+        now = datetime.now().isoformat()
+        # Ensure we use 'supabase' for the main project update and 'admin_supabase' for the license check
+        update_res = supabase.table("users").update({
+            "is_verified": True,
+            "verified_at": now,
+            "organization": org_name_actual
+        }).eq("clerk_id", verify.clerk_id).execute()
+
+        return {
+            "status": "verified",
+            "message": f"Successfully verified license for {org_name_actual}",
+            "data": update_res.data
+        }
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Verification Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/processes")

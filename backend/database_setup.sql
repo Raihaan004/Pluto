@@ -9,6 +9,9 @@ create table if not exists public.users (
   last_name text,
   image_url text,
   role text default 'viewer',
+  organization text,
+  is_verified boolean default false,
+  verified_at timestamp with time zone,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 

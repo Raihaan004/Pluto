@@ -9,6 +9,7 @@ class UserCreate(BaseModel):
     last_name: Optional[str] = None
     image_url: Optional[str] = None
     role: Optional[str] = None
+    organization: Optional[str] = None
 
 class User(UserCreate):
     id: int
@@ -58,6 +59,12 @@ class ConnectionJiraTrigger(BaseModel):
     activity_data: dict
     work_product_data: dict
     metadata: dict
+
+class LicenseVerify(BaseModel):
+    clerk_id: str
+    org_name: str
+    license_id: str
+    email_id: str
 
 class ProcessPackage(ProcessPackageCreate):
     id: int

@@ -8,6 +8,8 @@ type UserRole = 'admin' | 'editor' | 'viewer' | null;
 
 interface UserRoleContextType {
   role: UserRole;
+  isVerified: boolean;
+  organization: string | null;
   loading: boolean;
   refreshRole: () => Promise<void>;
 }
@@ -17,11 +19,15 @@ const UserRoleContext = createContext<UserRoleContextType | undefined>(undefined
 export function UserRoleProvider({ children }: { children: ReactNode }) {
   const { user, isLoaded } = useUser();
   const [role, setRole] = useState<UserRole>(null);
+  const [isVerified, setIsVerified] = useState(false);
+  const [organization, setOrganization] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchRole = async () => {
     if (!user) {
       setRole(null);
+      setIsVerified(false);
+      setOrganization(null);
       setLoading(false);
       return;
     }
@@ -29,9 +35,12 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users/${user.id}`);
       setRole(response.data.role);
+      setIsVerified(response.data.is_verified || false);
+      setOrganization(response.data.organization || null);
     } catch (error) {
-      console.error("Failed to fetch user role:", error);
-      setRole('viewer'); // Default fallback
+      console.error("Failed to fetch user data:", error);
+      setRole('viewer'); 
+      setIsVerified(false);
     } finally {
       setLoading(false);
     }
@@ -44,7 +53,7 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
   }, [isLoaded, user]);
 
   return (
-    <UserRoleContext.Provider value={{ role, loading, refreshRole: fetchRole }}>
+    <UserRoleContext.Provider value={{ role, isVerified, organization, loading, refreshRole: fetchRole }}>
       {children}
     </UserRoleContext.Provider>
   );
