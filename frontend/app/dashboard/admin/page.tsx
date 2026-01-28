@@ -417,6 +417,29 @@ export default function AdminPage() {
     }
   }
 
+  const handleDeleteUser = async (userId: string) => {
+    if (!user) return
+    if (!confirm("Are you sure you want to delete this user? This action cannot be undone.")) return
+    
+    setUpdatingId(userId)
+    try {
+      await axios.delete(
+        `${process.env.NEXT_PUBLIC_API_URL}/users/${userId}`,
+        {
+          headers: {
+            'X-Clerk-User-Id': user.id
+          }
+        }
+      )
+      setUsers(users.filter(u => u.clerk_id !== userId))
+    } catch (error) {
+      console.error("Failed to delete user:", error)
+      alert("Failed to delete user")
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
   useEffect(() => {
     if (!isRoleLoading) {
       fetchData()
@@ -569,7 +592,7 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody className="[&_tr:last-child]:border-0">
-                  {users.filter(u => u.approval_status === 'approved' || !u.approval_status).map((u) => (
+                  {users.filter(u => u.approval_status === 'approved' || u.approval_status === 'suspended' || !u.approval_status).map((u) => (
                     <tr key={u.clerk_id} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
                       <td className="p-4 align-middle font-medium">
                         <div className="flex items-center gap-2">
@@ -614,25 +637,52 @@ export default function AdminPage() {
                         </div>
                       </td>
                       <td className="p-4 align-middle">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
-                          ${u.role === 'admin' ? 'bg-red-100 text-red-800' : 
-                            u.role === 'editor' ? 'bg-blue-100 text-blue-800' : 
-                            'bg-gray-100 text-gray-800'}`}>
-                          {u.role}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium w-fit
+                            ${u.role === 'admin' ? 'bg-red-100 text-red-800' : 
+                              u.role === 'editor' ? 'bg-blue-100 text-blue-800' : 
+                              'bg-gray-100 text-gray-800'}`}>
+                            {u.role}
+                          </span>
+                          {u.approval_status === 'suspended' && (
+                            <Badge variant="destructive" className="text-[10px] h-4 py-0 w-fit">Suspended</Badge>
+                          )}
+                        </div>
                       </td>
                       <td className="p-4 align-middle">
                         <div className="flex gap-2 items-center justify-end">
                           <select 
-                            className="h-9 w-30 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                            className="h-9 w-24 rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                             value={u.role}
                             onChange={(e) => handleRoleUpdate(u.clerk_id, e.target.value)}
-                            disabled={updatingId === u.clerk_id || u.clerk_id === user?.id}
+                            disabled={updatingId === u.clerk_id || u.clerk_id === user?.id || u.approval_status === 'suspended'}
                           >
                             <option value="viewer">Viewer</option>
                             <option value="editor">Editor</option>
                             <option value="admin">Admin</option>
                           </select>
+                          
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className={`h-9 px-2 ${u.approval_status === 'suspended' ? 'text-green-600 border-green-200 hover:bg-green-50' : 'text-amber-600 border-amber-200 hover:bg-amber-50'}`}
+                            onClick={() => handleStatusUpdate(u.clerk_id, u.approval_status === 'suspended' ? 'approved' : 'suspended')}
+                            disabled={updatingId === u.clerk_id || u.clerk_id === user?.id}
+                            title={u.approval_status === 'suspended' ? 'Activate User' : 'Suspend User'}
+                          >
+                            {u.approval_status === 'suspended' ? <CheckCircle2 className="h-4 w-4" /> : <ShieldX className="h-4 w-4" />}
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-9 px-2 text-red-600 border-red-200 hover:bg-red-50"
+                            onClick={() => handleDeleteUser(u.clerk_id)}
+                            disabled={updatingId === u.clerk_id || u.clerk_id === user?.id}
+                            title="Delete User"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </td>
                     </tr>

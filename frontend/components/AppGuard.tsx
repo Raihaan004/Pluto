@@ -7,7 +7,7 @@ import { SignOutButton } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 
 export function AppGuard({ children }: { children: React.ReactNode }) {
-  const { isSuspended, loading } = useUserRole()
+  const { isSuspended, approvalStatus, loading } = useUserRole()
   const pathname = usePathname()
 
   // Allowed paths even when suspended
@@ -21,7 +21,10 @@ export function AppGuard({ children }: { children: React.ReactNode }) {
     )
   }
 
-  if (isSuspended && !allowedPaths.includes(pathname)) {
+  // Combined suspension check: either instance-wide or individual user suspension
+  const isUserSuspended = approvalStatus === 'suspended'
+
+  if ((isSuspended || isUserSuspended) && !allowedPaths.includes(pathname)) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-white dark:bg-black fixed inset-0 z-[100]">
         <div className="flex flex-col items-center gap-6 max-w-md text-center p-8 transition-all">
@@ -29,10 +32,14 @@ export function AppGuard({ children }: { children: React.ReactNode }) {
             <ShieldAlert size={48} />
           </div>
           <div className="space-y-2">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Instance Suspended</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              {isUserSuspended ? "Account Suspended" : "Instance Suspended"}
+            </h1>
             <p className="text-gray-500 dark:text-gray-400">
-              Your organization&apos;s access to Pluto has been suspended by the administrator. 
-              Please contact support or your account manager for assistance.
+              {isUserSuspended 
+                ? "Your individual account has been suspended by your administrator. Please contact your organization's admin for details."
+                : "Your organization's access to Pluto has been suspended by the administrator. Please contact support or your account manager for assistance."
+              }
             </p>
           </div>
           <div className="flex gap-4">

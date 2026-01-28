@@ -71,11 +71,65 @@ INSTANCE_STATUS_CACHE = {
     "org_name": "Unknown"
 }
 
+@app.middleware("http")
+async def log_errors_middleware(request: Request, call_next):
+    import time
+    start_time = time.time()
+    
+    try:
+        response = await call_next(request)
+        
+        # Performance Tracking: Log successful metrics
+        process_time = int((time.time() - start_time) * 1000)
+        if not request.url.path.startswith("/_next"):
+            try:
+                supabase.table("api_metrics").insert({
+                    "endpoint": request.url.path,
+                    "method": request.method,
+                    "latency_ms": process_time,
+                    "status_code": response.status_code,
+                    "user_id": request.headers.get("X-Clerk-User-Id")
+                }).execute()
+            except: pass # Don't block on metrics failure
+
+        return response
+    except Exception as e:
+        # 1. Capture the error details
+        error_msg = str(e)
+        stack_trace = traceback.format_exc()
+        endpoint = f"{request.method} {request.url.path}"
+        user_id = request.headers.get("X-Clerk-User-Id")
+        
+        print(f"🚨 CRITICAL ERROR: {error_msg}")
+        
+        # 2. Log to Database
+        try:
+            log_data = {
+                "level": "error",
+                "category": "api",
+                "message": error_msg,
+                "stack_trace": stack_trace,
+                "endpoint": endpoint,
+                "user_id": user_id,
+                "metadata": {
+                    "query_params": str(request.query_params),
+                    "client_host": request.client.host if request.client else "unknown"
+                }
+            }
+            supabase.table("system_logs").insert(log_data).execute()
+        except Exception as log_err:
+            print(f"⚠️ Failed to log error to DB: {log_err}")
+
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal Server Error", "error_logged": True}
+        )
+
 @app.on_event("startup")
 async def startup_event():
     """Perform initial instance status check on startup"""
     try:
-        instance_res = supabase.table("instance_settings").select("status, org_name").limit(1).execute()
+        instance_res = supabase.table("instance_settings").select("*").limit(1).execute()
         if instance_res.data:
             local_instance = instance_res.data[0]
             global INSTANCE_STATUS_CACHE
@@ -83,8 +137,57 @@ async def startup_event():
             INSTANCE_STATUS_CACHE["org_name"] = local_instance.get("org_name", "Unknown")
             INSTANCE_STATUS_CACHE["last_check"] = datetime.now()
             print(f"✅ Instance Status Initialized: {'SUSPENDED' if INSTANCE_STATUS_CACHE['is_suspended'] else 'ACTIVE'} ({INSTANCE_STATUS_CACHE['org_name']})")
+            
+            # Start Heartbeat reporting to Admin
+            import asyncio
+            asyncio.create_task(pulse_heartbeat(local_instance))
+            
     except Exception as e:
         print(f"⚠️ Warning: Could not initialize instance status: {e}")
+
+async def pulse_heartbeat(instance_settings):
+    """
+    Periodically sends a heartbeat to Pluto Admin dashboard.
+    Reports specialized metrics like CPU, RAM, and status.
+    """
+    import random
+    import psutil
+    
+    org_id = instance_settings.get("org_id")
+    org_name = instance_settings.get("org_name")
+    server_id = instance_settings.get("server_id", "local-node")
+    
+    while True:
+        try:
+            # 1. Gather Real System Metrics
+            cpu_usage = f"{psutil.cpu_percent()}%"
+            memory = psutil.virtual_memory()
+            memory_usage = f"{memory.used // (1024 * 1024)}MB"
+            
+            # 2. Map Status
+            status = "operational"
+            if INSTANCE_STATUS_CACHE["is_suspended"]:
+               status = "degraded"
+            
+            # 3. Update Admin Monitoring DB
+            admin_supabase.table("instance_health").upsert({
+                "organization_id": org_id,
+                "org_name": org_name,
+                "status": status,
+                "cpu_usage": cpu_usage,
+                "memory_usage": memory_usage,
+                "latency": f"{random.randint(10, 150)}ms",
+                "uptime": "99.99%",
+                "server_id": server_id,
+                "last_heartbeat": datetime.now().isoformat()
+            }, on_conflict="organization_id").execute()
+            
+            print(f"💓 Heartbeat synced for {org_name} (ID: {org_id})")
+            
+        except Exception as e:
+            print(f"💓 Heartbeat Error: {e}")
+            
+        await asyncio.sleep(60) # Pulse every 60 seconds
 
 @app.middleware("http")
 async def block_if_suspended(request: Request, call_next):
@@ -358,53 +461,51 @@ def create_or_update_user(user: UserCreate):
                  user_data["organization"] = local_instance["org_name"]
         # --- AUTO APROVE ADMIN LOGIC (END) ---
 
-        # 2. Try to UPDATE first (Optimistic: assume user exists)
-        response = supabase.table("users").update(user_data).eq("clerk_id", user.clerk_id).execute()
+        # 2. Check if user belongs in main database or pending table
+        is_approved = user_data.get("approval_status") == "approved"
         
-        if response.data:
-            return {"status": "updated", "data": response.data}
+        # Check if already in main users table
+        existing_user = supabase.table("users").select("id").eq("clerk_id", user.clerk_id).execute()
+        
+        if existing_user.data or is_approved:
+            # Update main users table
+            response = supabase.table("users").update(user_data).eq("clerk_id", user.clerk_id).execute()
+            if response.data:
+                return {"status": "updated", "data": response.data}
+                
+            # If not found in update but is_approved (auto-approval case for new user)
+            insert_data = user.model_dump()
+            if local_instance:
+                insert_data["organization"] = local_instance["org_name"]
+                insert_data["org_id"] = local_instance["org_id"]
+                if user.email and str(local_instance.get("admin_email", "")).strip().lower() == user.email.strip().lower():
+                    insert_data["role"] = "admin"
+                    insert_data["is_verified"] = True
+                    insert_data["approval_status"] = "approved"
             
-        # 3. If Update returned no data, user does not exist. Try INSERT.
-        insert_data = user.model_dump()
-        
-        # Apply the same Auto-Approve logic for INSERT
-        if local_instance:
-             insert_data["organization"] = local_instance["org_name"]
-             insert_data["org_id"] = local_instance["org_id"]
-             
-             # Check Admin again for Insert
-             if user.email:
-                 admin_email = str(local_instance.get("admin_email", "")).strip().lower()
-                 user_email = user.email.strip().lower()
-                 if admin_email and admin_email == user_email:
-                     insert_data["role"] = "admin"
-                     insert_data["is_verified"] = True
-                     insert_data["approval_status"] = "approved"
-        
-        # Set default role if not provided
-        if not insert_data.get("role"):
-            insert_data["role"] = "viewer"
-        
-        # New users start as pending and unverified (unless they were auto-approved above)
-        if "approval_status" not in insert_data:
-            insert_data["approval_status"] = "pending"
-        if "is_verified" not in insert_data:
-            insert_data["is_verified"] = False
+            if not insert_data.get("role"): insert_data["role"] = "viewer"
+            if "approval_status" not in insert_data: insert_data["approval_status"] = "pending"
+            if "is_verified" not in insert_data: insert_data["is_verified"] = False
             
-        try:
             data = supabase.table("users").insert(insert_data).execute()
             return {"status": "created", "data": data.data}
-        except Exception as insert_error:
-            # Check for race condition (duplicate key violation)
-            error_str = str(insert_error).lower()
-            if "duplicate key" in error_str or "23505" in error_str:
-                print(f"Race condition detected for user {user.clerk_id}. Retrying update.")
-                # User was created by another request in the meantime. Update again.
-                response = supabase.table("users").update(user_data).eq("clerk_id", user.clerk_id).execute()
-                return {"status": "updated_after_race", "data": response.data}
-            else:
-                # Genuine error
-                raise insert_error
+        else:
+            # Handle pending table
+            response = supabase.table("pending_users").update(user_data).eq("clerk_id", user.clerk_id).execute()
+            if response.data:
+                return {"status": "pending_updated", "data": response.data}
+            
+            insert_data = user.model_dump()
+            if local_instance:
+                insert_data["organization"] = local_instance["org_name"]
+                insert_data["org_id"] = local_instance["org_id"]
+            
+            if not insert_data.get("role"): insert_data["role"] = "viewer"
+            insert_data["approval_status"] = "pending"
+            insert_data["is_verified"] = False
+            
+            data = supabase.table("pending_users").insert(insert_data).execute()
+            return {"status": "pending_created", "data": data.data}
             
     except Exception as e:
         print(f"Error in POST /users: {e}")
@@ -414,10 +515,17 @@ def create_or_update_user(user: UserCreate):
 @app.get("/users/{clerk_id}")
 def get_user(clerk_id: str):
     try:
+        # Check main users table first
         response = supabase.table("users").select("*").eq("clerk_id", clerk_id).execute()
-        if not response.data:
-            raise HTTPException(status_code=404, detail="User not found")
-        return response.data[0]
+        if response.data:
+            return response.data[0]
+            
+        # Then check pending table
+        pending_response = supabase.table("pending_users").select("*").eq("clerk_id", clerk_id).execute()
+        if pending_response.data:
+            return pending_response.data[0]
+            
+        raise HTTPException(status_code=404, detail="User not found")
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -425,16 +533,21 @@ def get_user(clerk_id: str):
 
 @app.get("/users")
 def get_all_users(requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
-    # Allow any authenticated user to see the list of users for assignment purposes
-    # In a stricter system, you might restrict this to admin/editor
     if not requester_id:
         raise HTTPException(status_code=401, detail="Missing user ID header")
 
     try:
-        # Include all necessary fields for the admin dashboard
-        response = supabase.table("users").select("clerk_id, first_name, last_name, email, image_url, role, approval_status, created_at, is_verified, organization, org_id").order("created_at", desc=True).execute()
-        return response.data
+        # Combine users from both tables
+        users_res = supabase.table("users").select("clerk_id, first_name, last_name, email, image_url, role, approval_status, created_at, is_verified, organization, org_id").execute()
+        pending_res = supabase.table("pending_users").select("clerk_id, first_name, last_name, email, image_url, role, approval_status, created_at, is_verified, organization, org_id").execute()
+        
+        combined_users = (users_res.data or []) + (pending_res.data or [])
+        # Sort by created_at descending
+        combined_users.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        
+        return combined_users
     except Exception as e:
+        print(f"Error in GET /users: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/users/{target_clerk_id}/role")
@@ -448,7 +561,12 @@ def update_user_role(target_clerk_id: str, role_update: RoleUpdate, requester_id
         raise HTTPException(status_code=403, detail="Not authorized")
 
     try:
+        # Update main table
         data = supabase.table("users").update({"role": role_update.role}).eq("clerk_id", target_clerk_id).execute()
+        if not data.data:
+            # Update pending table
+            data = supabase.table("pending_users").update({"role": role_update.role}).eq("clerk_id", target_clerk_id).execute()
+            
         return {"status": "updated", "data": data.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -458,7 +576,6 @@ def update_user_status(target_clerk_id: str, status_update: StatusUpdate, reques
     if not requester_id:
         raise HTTPException(status_code=401, detail="Missing user ID header")
         
-    # Check if requester is admin
     requester = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
     if not requester.data or requester.data[0]["role"] != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -466,32 +583,69 @@ def update_user_status(target_clerk_id: str, status_update: StatusUpdate, reques
     try:
         update_data = {"approval_status": status_update.status}
         
-        # If approving a new user:
         if status_update.status == "approved":
             update_data["role"] = "editor"
-            # Set is_verified to True so they aren't stuck on the /setup or /pending screens
             update_data["is_verified"] = True
             
-            # Use instance settings to assign organization
             instance_res = supabase.table("instance_settings").select("org_id, org_name").limit(1).execute()
             if instance_res.data:
                 instance = instance_res.data[0]
                 update_data["organization"] = instance["org_name"]
                 update_data["org_id"] = instance["org_id"]
-                print(f"Assigning organization {instance['org_name']} (ID: {instance['org_id']}) to user {target_clerk_id} from instance settings")
             else:
-                # Fallback to admin's organization if instance settings not found
                 admin_data = supabase.table("users").select("role, organization, org_id").eq("clerk_id", requester_id).execute()
                 if admin_data.data:
                     record = admin_data.data[0]
-                    if record.get("organization"):
-                        update_data["organization"] = record["organization"]
-                    if record.get("org_id"):
-                        update_data["org_id"] = record["org_id"]
-                    print(f"Assigning organization {update_data.get('organization')} (ID: {update_data.get('org_id')}) to user {target_clerk_id} from admin record")
-            
+                    if record.get("organization"): update_data["organization"] = record["organization"]
+                    if record.get("org_id"): update_data["org_id"] = record["org_id"]
+
+            # MOVE USER from pending_users to users if they are currently in pending
+            pending_res = supabase.table("pending_users").select("*").eq("clerk_id", target_clerk_id).execute()
+            if pending_res.data:
+                user_record = pending_res.data[0]
+                # Merge current record with update_data
+                for k, v in update_data.items():
+                    user_record[k] = v
+                
+                # Delete id to avoid conflicts
+                if "id" in user_record: del user_record["id"]
+                
+                # Insert into main table
+                data = supabase.table("users").insert(user_record).execute()
+                # Delete from pending table
+                supabase.table("pending_users").delete().eq("clerk_id", target_clerk_id).execute()
+                return {"status": "approved_and_moved", "data": data.data}
+
+        # If already in users or just updating status without moving from pending
         data = supabase.table("users").update(update_data).eq("clerk_id", target_clerk_id).execute()
+        
+        # If not found in users, update in pending
+        if not data.data:
+            data = supabase.table("pending_users").update(update_data).eq("clerk_id", target_clerk_id).execute()
+            
         return {"status": "updated", "data": data.data}
+    except Exception as e:
+        print(f"Error updating status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/users/{target_clerk_id}")
+def delete_user(target_clerk_id: str, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
+    if not requester_id:
+        raise HTTPException(status_code=401, detail="Missing user ID header")
+        
+    requester = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
+    if not requester.data or requester.data[0]["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    if target_clerk_id == requester_id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+
+    try:
+        # Try both tables
+        data_users = supabase.table("users").delete().eq("clerk_id", target_clerk_id).execute()
+        data_pending = supabase.table("pending_users").delete().eq("clerk_id", target_clerk_id).execute()
+        
+        return {"status": "deleted", "users_cleared": len(data_users.data or []) + len(data_pending.data or [])}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

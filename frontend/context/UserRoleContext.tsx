@@ -11,7 +11,7 @@ interface UserRoleContextType {
   isVerified: boolean;
   isInstanceActivated: boolean;
   isSuspended: boolean;
-  approvalStatus: 'pending' | 'approved' | 'rejected' | null;
+  approvalStatus: 'pending' | 'approved' | 'rejected' | 'suspended' | null;
   organization: string | null;
   orgId: string | null;
   loading: boolean;
@@ -26,7 +26,7 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
   const [isVerified, setIsVerified] = useState(false);
   const [isInstanceActivated, setIsInstanceActivated] = useState(false);
   const [isSuspended, setIsSuspended] = useState(false);
-  const [approvalStatus, setApprovalStatus] = useState<'pending' | 'approved' | 'rejected' | null>(null);
+  const [approvalStatus, setApprovalStatus] = useState<'pending' | 'approved' | 'rejected' | 'suspended' | null>(null);
   const [organization, setOrganization] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
