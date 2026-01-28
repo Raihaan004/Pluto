@@ -10,8 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import axios from "axios"
-import { Loader2, Users, Plus, Trash2, CheckCircle2 } from "lucide-react"
+import { Loader2, Users, Plus, Trash2, CheckCircle2, Clock, ShieldX } from "lucide-react"
 
 interface User {
   id: number
@@ -22,6 +23,10 @@ interface User {
   role: string
   created_at: string
   image_url?: string
+  approval_status: 'pending' | 'approved' | 'rejected'
+  is_verified?: boolean
+  organization?: string
+  org_id?: string
 }
 
 interface Project {
@@ -441,6 +446,38 @@ export default function AdminPage() {
     }
   }
 
+  const handleStatusUpdate = async (userId: string, newStatus: string) => {
+    if (!user) return
+    setUpdatingId(userId)
+    try {
+      await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/users/${userId}/status`,
+        { status: newStatus },
+        {
+          headers: {
+            'X-Clerk-User-Id': user.id
+          }
+        }
+      )
+      // Update local state - if approved, also set role to editor and mark as verified
+      setUsers(users.map(u => 
+        u.clerk_id === userId 
+          ? { 
+              ...u, 
+              approval_status: newStatus as any,
+              role: newStatus === 'approved' ? 'editor' : u.role,
+              is_verified: newStatus === 'approved' ? true : u.is_verified
+            } 
+          : u
+      ))
+    } catch (error) {
+      console.error("Failed to update status:", error)
+      alert("Failed to update status")
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
   if (isRoleLoading) {
     return <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin" /></div>
   }
@@ -458,8 +495,55 @@ export default function AdminPage() {
     <div className="flex flex-col gap-6 p-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-        <p className="text-muted-foreground">Manage users and their roles.</p>
+        <p className="text-muted-foreground">Manage users, approvals, and their roles.</p>
       </div>
+
+      {users.filter(u => u.approval_status === 'pending').length > 0 && (
+        <Card className="border-amber-200 bg-amber-50/10 shadow-sm animate-in fade-in slide-in-from-top-4 duration-500">
+          <CardHeader>
+            <CardTitle className="text-amber-800 flex items-center gap-2">
+              <Clock className="h-5 w-5" /> Pending Approval Requests
+            </CardTitle>
+            <CardDescription>New users waiting for access to the platform.</CardDescription>
+          </CardHeader>
+          <CardContent>
+             <div className="space-y-3">
+               {users.filter(u => u.approval_status === 'pending').map(u => (
+                 <div key={u.clerk_id} className="flex items-center justify-between p-4 bg-white dark:bg-zinc-900 border border-amber-100 dark:border-amber-900/20 rounded-2xl shadow-sm">
+                    <div className="flex items-center gap-4">
+                       <Avatar className="h-12 w-12 border-2 border-white dark:border-zinc-800 shadow-sm">
+                         <AvatarImage src={u.image_url} />
+                         <AvatarFallback className="bg-amber-100 text-amber-700 font-bold">{u.first_name?.[0]}{u.last_name?.[0]}</AvatarFallback>
+                       </Avatar>
+                       <div>
+                         <p className="font-bold text-zinc-900 dark:text-white">{u.first_name} {u.last_name}</p>
+                         <p className="text-sm text-zinc-500">{u.email}</p>
+                         <p className="text-[10px] text-zinc-400 mt-0.5 uppercase tracking-wider font-bold">Requested on {new Date(u.created_at).toLocaleDateString()}</p>
+                       </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline"
+                        size="sm"
+                        className="rounded-xl border-zinc-200 dark:border-zinc-800 hover:bg-red-50 hover:text-red-600 hover:border-red-100 transition-all px-4"
+                        onClick={() => handleStatusUpdate(u.clerk_id, 'rejected')}
+                      >
+                         Dismiss
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        className="rounded-xl bg-green-600 hover:bg-green-700 shadow-md shadow-green-100 dark:shadow-none px-6"
+                        onClick={() => handleStatusUpdate(u.clerk_id, 'approved')}
+                      >
+                         Approve Access
+                      </Button>
+                    </div>
+                 </div>
+               ))}
+             </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-7">
@@ -485,7 +569,7 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody className="[&_tr:last-child]:border-0">
-                  {users.map((u) => (
+                  {users.filter(u => u.approval_status === 'approved' || !u.approval_status).map((u) => (
                     <tr key={u.clerk_id} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
                       <td className="p-4 align-middle font-medium">
                         <div className="flex items-center gap-2">

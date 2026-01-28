@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { LayoutDashboard, Workflow, FolderKanban, HelpCircle, Shield, ChevronLeft, ChevronRight, LogOut, Clock, AlertTriangle } from "lucide-react"
-import { UserButton, useUser, useOrganization } from "@clerk/nextjs"
+import { UserButton, useUser } from "@clerk/nextjs"
 import { cn } from "@/lib/utils"
 import { useUserRole } from "@/context/UserRoleContext"
 import { useNavigationState, useNavigationDispatch } from "@/context/NavigationContext"
@@ -45,9 +45,8 @@ const sidebarItems = [
 export function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const { role } = useUserRole()
+  const { role, organization: customOrg } = useUserRole()
   const { user } = useUser()
-  const { organization } = useOrganization()
   const { hasUnsavedChanges, saveAction } = useNavigationState()
   const { setHasUnsavedChanges } = useNavigationDispatch()
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -188,9 +187,9 @@ export function Sidebar() {
             </div>
             {!isCollapsed && (
               <div className="flex flex-col min-w-0 overflow-hidden">
-                {organization?.name && (
+                {customOrg && (
                   <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 truncate mb-0.5">
-                    {organization.name}
+                    {customOrg}
                   </span>
                 )}
                 <span className="text-sm font-semibold text-gray-900 truncate">

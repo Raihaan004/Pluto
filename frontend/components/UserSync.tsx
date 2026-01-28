@@ -6,7 +6,6 @@ import axios from "axios"
 
 export function UserSync() {
   const { user, isLoaded } = useUser()
-  const { organization } = useOrganization()
 
   useEffect(() => {
     if (isLoaded && user) {
@@ -18,7 +17,7 @@ export function UserSync() {
             first_name: user.firstName,
             last_name: user.lastName,
             image_url: user.imageUrl,
-            organization: organization?.name || null,
+            // We handle organization separately via our custom license verification
           })
         } catch (error) {
           console.error("Failed to sync user:", error)

@@ -15,10 +15,11 @@ import { toast } from "sonner"
 export default function SetupPage() {
   const { user, isLoaded } = useUser()
   const router = useRouter()
-  const { isVerified, refreshRole } = useUserRole()
+  const { isVerified, isInstanceActivated, refreshRole } = useUserRole()
   
   const [formData, setFormData] = useState({
     orgName: "",
+    orgCode: "",
     licenseId: "",
     emailId: ""
   })
@@ -29,10 +30,15 @@ export default function SetupPage() {
     if (isLoaded && !user) {
       router.push("/sign-in")
     }
-    if (isVerified) {
+    // If the instance is already verified AND the current user is verified, go to dashboard
+    if (isVerified && isInstanceActivated) {
       router.push("/dashboard")
     }
-  }, [isLoaded, user, isVerified, router])
+    // If the instance is verified but the user isn't, they should be on the pending page
+    if (!isVerified && isInstanceActivated) {
+      router.push("/pending")
+    }
+  }, [isLoaded, user, isVerified, isInstanceActivated, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -50,8 +56,11 @@ export default function SetupPage() {
       const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/verify-license`, {
         clerk_id: user?.id,
         org_name: formData.orgName,
+        org_code: formData.orgCode,
         license_id: formData.licenseId,
-        email_id: formData.emailId
+        email_id: formData.emailId,
+        app_version: "1.2.0", // Current build version
+        server_id: window.location.hostname
       })
 
       if (response.data.status === "verified") {
@@ -111,6 +120,18 @@ export default function SetupPage() {
                   onChange={(e) => setFormData({ ...formData, orgName: e.target.value.toUpperCase() })}
                   required
                   className="font-mono uppercase"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="orgCode">Organization Code</Label>
+                <Input
+                  id="orgCode"
+                  placeholder="ORG_123"
+                  value={formData.orgCode}
+                  onChange={(e) => setFormData({ ...formData, orgCode: e.target.value })}
+                  required
+                  className="font-mono"
                 />
               </div>
 

@@ -2,6 +2,7 @@ import { ClerkProvider } from '@clerk/nextjs'
 import { UserRoleProvider } from '@/context/UserRoleContext';
 import { NavigationProvider } from '@/context/NavigationContext';
 import { UserSync } from '@/components/UserSync';
+import { AppGuard } from '@/components/AppGuard';
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -36,7 +37,9 @@ export default function RootLayout({
           <UserRoleProvider>
             <NavigationProvider>
               <UserSync />
-              {children}
+              <AppGuard>
+                {children}
+              </AppGuard>
               <Toaster position="top-right" richColors />
             </NavigationProvider>
           </UserRoleProvider>

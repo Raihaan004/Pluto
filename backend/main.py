@@ -1,9 +1,29 @@
-from fastapi import FastAPI, HTTPException, Header, Query, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Header, Query, BackgroundTasks, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+# Add a check for suspension status that can be used as a dependency
+async def check_suspension():
+    try:
+        instance = supabase.table("instance_settings").select("*").limit(1).execute()
+        if instance.data:
+            local_instance = instance.data[0]
+            # Check remote status
+            admin_res = admin_supabase.table("organizations").select("status").eq("id", local_instance["org_id"]).execute()
+            if admin_res.data and admin_res.data[0]["status"] != "active":
+                raise HTTPException(status_code=403, detail="Instance Suspended: Access denied by Pluto Admin.")
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        # If admin DB is unreachable, we default to local state or allow
+        pass
+
+# You can apply this to the whole app or specific routers
+# For now, let's update the instance-status and add a middleware-like check
 from pydantic import BaseModel
 from database import supabase, admin_supabase
 from models import (
-    UserCreate, RoleUpdate, ProcessPackageCreate, ProcessRename, 
+    UserCreate, RoleUpdate, StatusUpdate, ProcessPackageCreate, ProcessRename, 
     ProcessVersionCreate, ProjectCreate, ProjectUpdate, CollaboratorAdd, 
     ConnectionJiraTrigger, LicenseVerify
 )
@@ -15,6 +35,8 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+import traceback
 
 app = FastAPI()
 
@@ -42,6 +64,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Global cache for instance status to avoid redundant DB calls in middleware
+INSTANCE_STATUS_CACHE = {
+    "is_suspended": False,
+    "last_check": None,
+    "org_name": "Unknown"
+}
+
+@app.on_event("startup")
+async def startup_event():
+    """Perform initial instance status check on startup"""
+    try:
+        instance_res = supabase.table("instance_settings").select("status, org_name").limit(1).execute()
+        if instance_res.data:
+            local_instance = instance_res.data[0]
+            global INSTANCE_STATUS_CACHE
+            INSTANCE_STATUS_CACHE["is_suspended"] = str(local_instance.get("status", "active")).lower() != "active"
+            INSTANCE_STATUS_CACHE["org_name"] = local_instance.get("org_name", "Unknown")
+            INSTANCE_STATUS_CACHE["last_check"] = datetime.now()
+            print(f"✅ Instance Status Initialized: {'SUSPENDED' if INSTANCE_STATUS_CACHE['is_suspended'] else 'ACTIVE'} ({INSTANCE_STATUS_CACHE['org_name']})")
+    except Exception as e:
+        print(f"⚠️ Warning: Could not initialize instance status: {e}")
+
+@app.middleware("http")
+async def block_if_suspended(request: Request, call_next):
+    # Skip check for status, health and static endpoints
+    if request.url.path in ["/instance-status", "/health", "/", "/verify-license"] or request.url.path.startswith("/_next"):
+        return await call_next(request)
+    
+    # Check the cached status
+    if INSTANCE_STATUS_CACHE["is_suspended"]:
+        print(f"🚫 Blocking request to {request.url.path} - Instance {INSTANCE_STATUS_CACHE['org_name']} is SUSPENDED")
+        return JSONResponse(
+            status_code=403,
+            content={"detail": f"Instance Suspended: Access denied by Pluto Admin for {INSTANCE_STATUS_CACHE['org_name']}."}
+        )
+                
+    return await call_next(request)
+
 @app.get("/")
 def read_root():
     return {"Hello": "World", "status": "Backend is running"}
@@ -65,16 +125,239 @@ def health_check():
             "message": "Backend is running but Supabase connection failed. Check SUPABASE_URL and SUPABASE_KEY environment variables."
         }
 
-import traceback
+
+@app.post("/verify-license")
+async def verify_and_setup_instance(data: LicenseVerify):
+    """
+    Connects to Pluto Admin to verify license and organization details.
+    If valid, stores the configuration in the local database.
+    """
+    try:
+        # 1. Call Pluto Admin API
+        admin_url = os.environ.get("PLUTO_ADMIN_URL", "http://localhost:3001") # Default to local admin if not set
+        verify_url = f"{admin_url}/api/verify-license"
+        
+        payload = {
+            "license_key": data.license_id,
+            "org_code": data.org_code,
+            "server_id": data.server_id,
+            "app_version": data.app_version
+        }
+        
+
+        import requests
+        print(f"DEBUG: Connecting to {verify_url}")
+        response = requests.post(verify_url, json=payload)
+        
+        print(f"DEBUG: Response Status: {response.status_code}")
+        print(f"DEBUG: Response Content: {response.text[:200]}") # Print first 200 chars
+
+
+        if response.status_code != 200:
+            error_detail = f"Verification failed with status {response.status_code}"
+            try:
+                error_detail = response.json().get("error", error_detail)
+            except:
+                # If response is not JSON, use text (truncated)
+                error_detail = f"Verification failed: {response.text[:200]}"
+            raise HTTPException(status_code=400, detail=error_detail)
+            
+        verification_data = response.json()
+        
+        # 2. Store in Local Database
+        # Clean existing settings first (assuming single tenant)
+        supabase.table("instance_settings").delete().neq("id", 0).execute()
+        
+        new_instance = {
+            "org_id": verification_data["org_id"],
+            "org_name": verification_data["org_name"],
+            "org_code": verification_data["org_code"],
+            "license_key": data.license_id,
+            "status": "active",
+            "last_synced_at": datetime.utcnow().isoformat(),
+            "admin_email": data.email_id
+        }
+        
+        
+        insert_res = supabase.table("instance_settings").insert(new_instance).execute()
+        
+        if not insert_res.data:
+             # Wait! If we deleted everything, maybe the insert failed because we didn't get return value?
+             # Check if it was inserted
+             check = supabase.table("instance_settings").select("*").eq("org_code", verification_data["org_code"]).execute()
+             if not check.data:
+                 print("Insert Failed - No Data Returned")
+                 raise HTTPException(status_code=500, detail="Failed to save instance settings locally")
+             
+        # Update cache
+        global INSTANCE_STATUS_CACHE
+        INSTANCE_STATUS_CACHE["is_suspended"] = False
+        INSTANCE_STATUS_CACHE["org_name"] = verification_data["org_name"]
+        
+        # 3. Promote Admin User if exists
+        try:
+            admin_email = data.email_id.strip()
+            # Try exact match first
+            user_check = supabase.table("users").select("*").eq("email", admin_email).execute()
+            
+            # If not found, try case insensitive match (if Supabase allows ilike or similar, or just python filter)
+            if not user_check.data:
+                 print(f"ℹ️ Exact match for {admin_email} failed. checking all users (slow but safe for setup).")
+                 all_users = supabase.table("users").select("*").execute()
+                 if all_users.data:
+                     # manual filter
+                     found_users = [u for u in all_users.data if str(u.get("email")).lower() == admin_email.lower()]
+                     if found_users:
+                         user_check.data = [found_users[0]]
+
+            if user_check.data and len(user_check.data) > 0:
+                user_id = user_check.data[0]["id"]
+                print(f"✅ Found existing user for admin email {admin_email}. Promoting to Admin.")
+                
+                update_payload = {
+                    "role": "admin",
+                    "org_id": str(verification_data["org_id"]),
+                    "organization": verification_data["org_name"],
+                    "is_verified": True,
+                    "approval_status": "approved"
+                }
+                
+                up_res = supabase.table("users").update(update_payload).eq("id", user_id).execute()
+                print(f"DEBUG: User update result: {up_res.data}")
+            else:
+                print(f"ℹ️ User with email {admin_email} not found yet. They will need to sign up.")
+                
+        except Exception as e:
+            print(f"⚠️ Failed to promote admin user: {e}")
+            # Don't fail the whole request, just log it
+        
+        return {"status": "verified", "detail": "Instance activated successfully"}
+
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Verification Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/instance-status")
+def get_instance_status():
+    """
+    Checks the status of this local instance by verifying its identity with the 
+    central Pluto Admin database. Ensures the hosted project remains connected.
+    """
+    try:
+        # 1. Look for local instance settings
+        instance_res = supabase.table("instance_settings").select("*").limit(1).execute()
+        if not instance_res.data:
+            return {"is_activated": False}
+
+        local_instance = instance_res.data[0]
+        org_id = local_instance["org_id"]
+        
+        # 2. Remote check against Pluto Admin database
+        # Convert org_id to int to ensure correct bigint comparison in Supabase/Postgres
+        target_id = org_id
+        try:
+            if isinstance(org_id, str) and org_id.isdigit():
+                target_id = int(org_id)
+        except:
+            pass
+            
+        admin_res = admin_supabase.table("organizations").select("status, plan, name").eq("id", target_id).execute()
+            
+        if not admin_res.data:
+            print(f"❌ CRITICAL: Local Org ID '{org_id}' (Target: {target_id}) not found in Admin DB!")
+            # Try to find by name as a fallback for robustness
+            admin_res = admin_supabase.table("organizations").select("status, plan, name").ilike("name", local_instance.get("org_name", "")).execute()
+            
+            if not admin_res.data:
+                return {
+                    "is_activated": True,
+                    "is_suspended": False,
+                    "error": f"Organization '{org_id}' not found."
+                }
+
+        central_org = admin_res.data[0]
+        
+        # 3. Handle status changes (e.g. suspension)
+        # FORCE check against 'active' - if it's 'suspended' or anything else, block it
+        status_value = str(central_org.get("status", "active")).lower().strip()
+        is_suspended = status_value != "active"
+        
+        print(f"🔄 [SYNC] Org: {central_org['name']} | Remote Status: '{status_value}' | Blocked: {is_suspended}")
+        
+        # 4. Update Global Cache
+        global INSTANCE_STATUS_CACHE
+        INSTANCE_STATUS_CACHE["is_suspended"] = is_suspended
+        INSTANCE_STATUS_CACHE["org_name"] = central_org["name"]
+        INSTANCE_STATUS_CACHE["last_check"] = datetime.now()
+        
+        # 5. Sync status and plan changes locally if they happened in Admin panel
+        # Check if plan exists in local_instance before verifying change to likely
+        # avoid key error if plan column is missing in older instances
+        current_plan = local_instance.get("plan")
+        current_status = local_instance.get("status")
+        
+        if central_org.get("plan") != current_plan or central_org.get("status") != current_status:
+            update_data = {}
+            if central_org.get("plan"): update_data["plan"] = central_org["plan"]
+            if central_org.get("status"): update_data["status"] = central_org["status"]
+            
+            if update_data:
+                supabase.table("instance_settings").update(update_data).eq("org_id", org_id).execute()
+
+        return {
+            "is_activated": True,
+            "organization_name": central_org["name"],
+            "plan": central_org["plan"],
+            "is_suspended": is_suspended,
+            "status": central_org["status"]
+        }
+    except Exception as e:
+        print(f"Connection error to Pluto Admin: {e}")
+        # In case of connectivity issues to Pluto Admin, we might want to allow 
+        # cached access or block it. For safety-critical, we might report an error.
+        return {
+            "is_activated": True, 
+            "error": "Could not connect to Pluto Admin central database.",
+            # Use safe get just in case local_instance wasn't defined yet
+            "organization_name": "Unknown"
+        }
+
 
 @app.post("/users")
 def create_or_update_user(user: UserCreate):
     try:
+        # 0. Fetch Instance Settings for Auto-Approval / Org Linkage
+        instance_res = supabase.table("instance_settings").select("*").limit(1).execute()
+        local_instance = instance_res.data[0] if instance_res.data else None
+        
         # 1. Prepare data for update (exclude unset fields)
         user_data = user.model_dump(exclude_unset=True)
         if "role" in user_data and user_data["role"] is None:
             del user_data["role"]
             
+        # --- AUTO APROVE ADMIN LOGIC (START) ---
+        if local_instance and user.email:
+            # Check if this user is the Instance Admin
+            admin_email = str(local_instance.get("admin_email", "")).strip().lower()
+            user_email = user.email.strip().lower()
+            
+            if admin_email and admin_email == user_email:
+                print(f"👑 Auto-Approving Instance Admin: {user_email}")
+                user_data["role"] = "admin"
+                user_data["is_verified"] = True
+                user_data["approval_status"] = "approved"
+                user_data["org_id"] = local_instance["org_id"]
+                user_data["organization"] = local_instance["org_name"]
+            
+            # Ensure organization link for regular users too if not set
+            elif not user_data.get("org_id"):
+                 user_data["org_id"] = local_instance["org_id"]
+                 user_data["organization"] = local_instance["org_name"]
+        # --- AUTO APROVE ADMIN LOGIC (END) ---
+
         # 2. Try to UPDATE first (Optimistic: assume user exists)
         response = supabase.table("users").update(user_data).eq("clerk_id", user.clerk_id).execute()
         
@@ -83,9 +366,30 @@ def create_or_update_user(user: UserCreate):
             
         # 3. If Update returned no data, user does not exist. Try INSERT.
         insert_data = user.model_dump()
+        
+        # Apply the same Auto-Approve logic for INSERT
+        if local_instance:
+             insert_data["organization"] = local_instance["org_name"]
+             insert_data["org_id"] = local_instance["org_id"]
+             
+             # Check Admin again for Insert
+             if user.email:
+                 admin_email = str(local_instance.get("admin_email", "")).strip().lower()
+                 user_email = user.email.strip().lower()
+                 if admin_email and admin_email == user_email:
+                     insert_data["role"] = "admin"
+                     insert_data["is_verified"] = True
+                     insert_data["approval_status"] = "approved"
+        
         # Set default role if not provided
         if not insert_data.get("role"):
             insert_data["role"] = "viewer"
+        
+        # New users start as pending and unverified (unless they were auto-approved above)
+        if "approval_status" not in insert_data:
+            insert_data["approval_status"] = "pending"
+        if "is_verified" not in insert_data:
+            insert_data["is_verified"] = False
             
         try:
             data = supabase.table("users").insert(insert_data).execute()
@@ -127,8 +431,8 @@ def get_all_users(requester_id: Optional[str] = Header(None, alias="X-Clerk-User
         raise HTTPException(status_code=401, detail="Missing user ID header")
 
     try:
-        # Optimize: Select only necessary fields to reduce payload size
-        response = supabase.table("users").select("clerk_id, first_name, last_name, email, image_url, role").order("created_at", desc=True).execute()
+        # Include all necessary fields for the admin dashboard
+        response = supabase.table("users").select("clerk_id, first_name, last_name, email, image_url, role, approval_status, created_at, is_verified, organization, org_id").order("created_at", desc=True).execute()
         return response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -149,19 +453,63 @@ def update_user_role(target_clerk_id: str, role_update: RoleUpdate, requester_id
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.put("/users/{target_clerk_id}/status")
+def update_user_status(target_clerk_id: str, status_update: StatusUpdate, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
+    if not requester_id:
+        raise HTTPException(status_code=401, detail="Missing user ID header")
+        
+    # Check if requester is admin
+    requester = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
+    if not requester.data or requester.data[0]["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    try:
+        update_data = {"approval_status": status_update.status}
+        
+        # If approving a new user:
+        if status_update.status == "approved":
+            update_data["role"] = "editor"
+            # Set is_verified to True so they aren't stuck on the /setup or /pending screens
+            update_data["is_verified"] = True
+            
+            # Use instance settings to assign organization
+            instance_res = supabase.table("instance_settings").select("org_id, org_name").limit(1).execute()
+            if instance_res.data:
+                instance = instance_res.data[0]
+                update_data["organization"] = instance["org_name"]
+                update_data["org_id"] = instance["org_id"]
+                print(f"Assigning organization {instance['org_name']} (ID: {instance['org_id']}) to user {target_clerk_id} from instance settings")
+            else:
+                # Fallback to admin's organization if instance settings not found
+                admin_data = supabase.table("users").select("role, organization, org_id").eq("clerk_id", requester_id).execute()
+                if admin_data.data:
+                    record = admin_data.data[0]
+                    if record.get("organization"):
+                        update_data["organization"] = record["organization"]
+                    if record.get("org_id"):
+                        update_data["org_id"] = record["org_id"]
+                    print(f"Assigning organization {update_data.get('organization')} (ID: {update_data.get('org_id')}) to user {target_clerk_id} from admin record")
+            
+        data = supabase.table("users").update(update_data).eq("clerk_id", target_clerk_id).execute()
+        return {"status": "updated", "data": data.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/verify-license")
 def verify_license(verify: LicenseVerify):
     try:
         # 1. Search for organization in ADMIN database
-        # Org Name matches (Case Insensitive for name, but user wants Caps only input)
-        # Admin Email matches
-        org_res = admin_supabase.table("organizations").select("id, name").ilike("name", verify.org_name).eq("admin_email", verify.email_id).execute()
+        org_res = admin_supabase.table("organizations").select("*").ilike("name", verify.org_name).eq("admin_email", verify.email_id).execute()
         
         if not org_res.data:
             raise HTTPException(status_code=404, detail="Organization or Admin Email not found in Pluto Admin records.")
         
-        org_id = org_res.data[0]["id"]
-        org_name_actual = org_res.data[0]["name"]
+        org = org_res.data[0]
+        org_id = org["id"]
+        org_name_actual = org["name"]
+        org_code = org.get("code")
+        org_plan = org.get("plan")
+        org_status = org.get("status")
 
         # 2. Check if the input org_name is strictly CAPS ONLY
         if verify.org_name != verify.org_name.upper():
@@ -175,11 +523,62 @@ def verify_license(verify: LicenseVerify):
 
         # 4. Success - Update the user in the MAIN database
         now = datetime.now().isoformat()
+        
+        # 4.5 Notify Pluto Admin about this activation
+        try:
+            admin_supabase.table("organizations").update({
+                "status": "active",
+                "activated_at": now,
+                "server_id": verify.server_id,
+                "app_version": verify.app_version or "1.0.0"
+            }).eq("id", org_id).execute()
+
+            # Create a log entry in Pluto Admin
+            admin_supabase.table("admin_logs").insert({
+                "action": "REMOTE_ACTIVATION",
+                "details": f"Instance activated remotely for organization {org_name_actual}. Server: {verify.server_id}, Version: {verify.app_version}",
+                "organization_id": org_id,
+                "performed_by": f"Remote System ({verify.email_id})"
+            }).execute()
+        except Exception as admin_err:
+            print(f"Warning: Could not notify Pluto Admin of activation: {admin_err}")
+
+        # 5. Lock this instance to the organization
+        # We use upscale or delete-then-insert to ensure we only have ONE instance record
+        try:
+            # Delete any existing settings to ensure clean activation
+            supabase.table("instance_settings").delete().neq("id", -1).execute()
+            
+            supabase.table("instance_settings").insert({
+                "org_id": str(org_id),
+                "org_name": org_name_actual,
+                "org_code": org_code or verify.org_code, # Prefer official code from Admin DB
+                "plan": org_plan,
+                "status": org_status,
+                "license_key": verify.license_id,
+                "app_version": verify.app_version or "1.0.0",
+                "server_id": verify.server_id,
+                "admin_email": verify.email_id,
+                "activated_at": now
+            }).execute()
+            
+            # Immediately update the local cache so the middleware knows we are ACTIVE
+            global INSTANCE_STATUS_CACHE
+            INSTANCE_STATUS_CACHE["is_suspended"] = str(org_status).lower() != "active"
+            INSTANCE_STATUS_CACHE["org_name"] = org_name_actual
+            INSTANCE_STATUS_CACHE["last_check"] = datetime.now()
+            print(f"✅ Instance Activated and Locked to {org_name_actual} (ID: {org_id})")
+        except Exception as lock_err:
+            print(f"Error locking instance settings: {lock_err}")
+
         # Ensure we use 'supabase' for the main project update and 'admin_supabase' for the license check
         update_res = supabase.table("users").update({
             "is_verified": True,
             "verified_at": now,
-            "organization": org_name_actual
+            "organization": org_name_actual,
+            "org_id": str(org_id), # Store the actual ID from Admin DB
+            "approval_status": "approved",
+            "role": "admin"
         }).eq("clerk_id", verify.clerk_id).execute()
 
         return {

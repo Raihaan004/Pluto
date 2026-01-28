@@ -10,12 +10,16 @@ class UserCreate(BaseModel):
     image_url: Optional[str] = None
     role: Optional[str] = None
     organization: Optional[str] = None
+    org_id: Optional[str] = None
 
 class User(UserCreate):
     id: int
 
 class RoleUpdate(BaseModel):
     role: str
+
+class StatusUpdate(BaseModel):
+    status: str
 
 class ProcessSheet(BaseModel):
     id: str
@@ -63,8 +67,11 @@ class ConnectionJiraTrigger(BaseModel):
 class LicenseVerify(BaseModel):
     clerk_id: str
     org_name: str
+    org_code: str
     license_id: str
     email_id: str
+    app_version: Optional[str] = "1.0.0"
+    server_id: Optional[str] = None
 
 class ProcessPackage(ProcessPackageCreate):
     id: int
