@@ -9,7 +9,7 @@ interface ProcessSidebarProps {
   onSaveVersion?: () => void;
   onLoadFile?: (file: File) => void;
   onDownload?: () => void;
-  versions?: { name: string; created_at: string; sheets?: any[] }[];
+  versions?: { name: string; created_at: string; sheets?: any[]; comments?: string }[];
   onLoadVersion?: (versionName: string) => void;
   onAddLane?: () => void;
   isReadOnly?: boolean;
@@ -237,7 +237,7 @@ export const ProcessSidebar = ({
                 <option value="" disabled>Select Version</option>
                 {versions.map((v, i) => (
                   <option key={i} value={v.name}>
-                    {v.name} ({new Date(v.created_at).toLocaleDateString()}) - {v.sheets?.length || 0} Sheets
+                    {v.name} ({new Date(v.created_at).toLocaleDateString()}) - {v.sheets?.length || 0} Sheets {v.comments ? '💬' : ''}
                   </option>
                 ))}
               </select>

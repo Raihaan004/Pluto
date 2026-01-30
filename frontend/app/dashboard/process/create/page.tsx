@@ -46,6 +46,7 @@ import 'reactflow/dist/style.css';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -452,7 +453,7 @@ export default function CreateProcessPage() {
   const [activeSheetId, setActiveSheetId] = useState('parent');
   const [isSaving, setIsSaving] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
-  const [versions, setVersions] = useState<{ name: string; created_at: string; sheets: ProcessSheet[] }[]>([]);
+  const [versions, setVersions] = useState<{ name: string; created_at: string; sheets: ProcessSheet[]; comments?: string }[]>([]);
 
   // ReactFlow state for the ACTIVE sheet
   const [nodes, setNodes, onNodesChange] = useCustomNodeStates(initialNodes);
@@ -473,6 +474,7 @@ export default function CreateProcessPage() {
   const [isDeleteSheetDialogOpen, setIsDeleteSheetDialogOpen] = useState(false);
   const [sheetToDelete, setSheetToDelete] = useState<string | null>(null);
   const [newVersionName, setNewVersionName] = useState('');
+  const [newVersionComment, setNewVersionComment] = useState('');
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [editingSheetName, setEditingSheetName] = useState('');
   const [edgeStyle, setEdgeStyle] = useState<'blue-solid' | 'red-dashed'>('blue-solid');
@@ -484,6 +486,7 @@ export default function CreateProcessPage() {
   // Load Version Confirmation
   const [isLoadVersionConfirmOpen, setIsLoadVersionConfirmOpen] = useState(false);
   const [pendingVersionName, setPendingVersionName] = useState<string | null>(null);
+  const [pendingVersionComment, setPendingVersionComment] = useState<string | null>(null);
 
   // Dialog State moved from ProcessCanvas
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -997,6 +1000,7 @@ export default function CreateProcessPage() {
     if (!targetProcessId || isReadOnly) return;
     
     setNewVersionName(`Version ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`);
+    setNewVersionComment('');
     setIsSaveVersionDialogOpen(true);
   }, [processId, projectProcessId, isReadOnly]);
 
@@ -1020,6 +1024,7 @@ export default function CreateProcessPage() {
 
       await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/processes/${targetProcessId}/versions`, {
         name: newVersionName.trim(),
+        comments: newVersionComment.trim(),
         sheets: sheetsToSave.map(s => ({
           id: s.id,
           name: s.name,
@@ -1038,6 +1043,7 @@ export default function CreateProcessPage() {
       
       setIsSaveVersionDialogOpen(false);
       setNewVersionName('');
+      setNewVersionComment('');
       toast.success('Version saved successfully!');
     } catch (error) {
       console.error('Failed to save version:', error);
@@ -1045,7 +1051,7 @@ export default function CreateProcessPage() {
     } finally {
       setIsSaving(false);
     }
-  }, [processId, projectProcessId, isReadOnly, sheets, activeSheetId, nodes, edges, newVersionName, user?.id]);
+  }, [processId, projectProcessId, isReadOnly, sheets, activeSheetId, nodes, edges, newVersionName, newVersionComment, user?.id]);
 
   const handleLoadFile = useCallback((file: File) => {
     if (isReadOnly) return;
@@ -1105,8 +1111,10 @@ export default function CreateProcessPage() {
   const handleLoadVersion = useCallback((versionName: string) => {
     if (isReadOnly) return;
     setPendingVersionName(versionName);
+    const version = versions.find(v => v.name === versionName);
+    setPendingVersionComment(version?.comments || null);
     setIsLoadVersionConfirmOpen(true);
-  }, [isReadOnly]);
+  }, [isReadOnly, versions]);
 
   const confirmLoadVersion = useCallback(() => {
     if (!pendingVersionName) return;
@@ -1924,6 +1932,16 @@ export default function CreateProcessPage() {
             />
           </div>
           <div>
+            <Label htmlFor="versionComment" className="mb-2 block">Version Comments</Label>
+            <Textarea
+              id="versionComment"
+              value={newVersionComment}
+              onChange={(e) => setNewVersionComment(e.target.value)}
+              placeholder="Explain what changed in this version..."
+              rows={3}
+            />
+          </div>
+          <div>
             <Label className="mb-2 block">Save Scope</Label>
             <Select 
               value={saveScope} 
@@ -1963,6 +1981,12 @@ export default function CreateProcessPage() {
               : "This will replace all current sheets with the data from this version."}
             Any unsaved changes on the current sheet will be lost.
           </DialogDescription>
+          {pendingVersionComment && (
+            <div className="mt-4 p-3 bg-gray-50 rounded-md border text-sm">
+              <div className="font-semibold text-gray-500 mb-1 uppercase text-[10px]">Version Comments</div>
+              <p className="text-gray-700 italic">"{pendingVersionComment}"</p>
+            </div>
+          )}
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => setIsLoadVersionConfirmOpen(false)}>Cancel</Button>

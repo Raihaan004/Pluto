@@ -870,6 +870,7 @@ def save_process_version(process_id: int, version: ProcessVersionCreate, request
         new_version = {
             "name": version.name,
             "sheets": [sheet.model_dump() for sheet in version.sheets],
+            "comments": version.comments,
             "created_at": str(datetime.now())
         }
         versions.append(new_version)

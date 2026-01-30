@@ -41,6 +41,7 @@ class ProcessRename(BaseModel):
 class ProcessVersionCreate(BaseModel):
     name: str
     sheets: list[ProcessSheet]
+    comments: Optional[str] = None
 
 class ProjectCreate(BaseModel):
     user_id: str

@@ -30,7 +30,7 @@ import { useUserRole } from "@/context/UserRoleContext"
 interface Process {
   id: number
   name: string
-  versions: { name: string; created_at: string }[]
+  versions: { name: string; created_at: string; comments?: string }[]
 }
 
 const fetcher = (url: string) => axios.get(url).then(res => res.data)
@@ -100,7 +100,7 @@ export function CreateProjectButton() {
           New Project
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-106.25">
+      <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>Create New Project</DialogTitle>
           <DialogDescription>
@@ -149,14 +149,26 @@ export function CreateProjectButton() {
                 Version
               </Label>
               <Select onValueChange={setSelectedVersion} value={selectedVersion}>
-                <SelectTrigger className="col-span-3">
+                <SelectTrigger className="col-span-3 h-auto py-2">
                   <SelectValue placeholder="Select a version" />
                 </SelectTrigger>
                 <SelectContent>
                   {selectedProcess.versions?.length > 0 ? (
                     selectedProcess.versions.map((v, i) => (
-                      <SelectItem key={i} value={v.name}>
-                        {v.name} ({new Date(v.created_at).toLocaleDateString()})
+                      <SelectItem key={i} value={v.name} className="py-3">
+                        <div className="flex flex-col gap-0.5 text-left w-full">
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="font-medium">{v.name}</span>
+                            <span className="text-[10px] text-gray-400 font-normal">
+                              {new Date(v.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                          {v.comments && (
+                            <span className="text-xs text-gray-500 italic line-clamp-2 pr-4 leading-normal">
+                              "{v.comments}"
+                            </span>
+                          )}
+                        </div>
                       </SelectItem>
                     ))
                   ) : (
