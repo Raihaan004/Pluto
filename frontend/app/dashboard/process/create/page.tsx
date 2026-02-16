@@ -33,6 +33,7 @@ import {
   getViewportForBounds,
   ConnectionLineType,
   NodeChange,
+  PanOnScrollMode,
 } from 'reactflow';
 
 // Import ReactFlow normally (needed immediately for canvas)
@@ -75,6 +76,17 @@ const ShareProjectDialog = dynamic(() => import('@/components/process/ShareProje
 // Import node types and edge types (these are lightweight)
 import { nodeTypes } from '@/components/process/CustomNodes';
 import EditableStepEdge from '@/components/process/EditableStepEdge';
+import { 
+  RowControls, 
+  TableHeader, 
+  TableGrid, 
+  TableScrollbars, 
+  DEFAULT_COLUMN_WIDTHS, 
+  DEFAULT_ROW_HEIGHT,
+  ROW_LABEL_WIDTH,
+  HEADER_HEIGHT,
+  ROWS_COUNT
+} from '@/components/process/TableComponents';
 
 const initialNodes = [
   {
@@ -92,11 +104,76 @@ const edgeTypes = {
   'editable-step': EditableStepEdge,
 };
 
+const ProcessPublishDialog = ({ isOpen, onClose, onPublish, currentName }: { isOpen: boolean, onClose: () => void, onPublish: (name: string, vName: string, vComments: string) => void, currentName: string }) => {
+    const [name, setName] = useState(currentName);
+    const [vName, setVName] = useState('');
+    const [vComments, setVComments] = useState('');
+
+    useEffect(() => {
+        if (isOpen) {
+            setName(currentName);
+            setVName('');
+            setVComments('');
+        }
+    }, [isOpen, currentName]);
+
+    return (
+        <Dialog open={isOpen} onOpenChange={onClose}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Publish Process</DialogTitle>
+                    <DialogDescription>
+                        Set a name and version information for this publication.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="pName">Process Name</Label>
+                        <Input 
+                            id="pName" 
+                            value={name} 
+                            onChange={(e) => setName(e.target.value)} 
+                            placeholder="Process Name" 
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="vName">Version Name (e.g. v1.0)</Label>
+                        <Input 
+                            id="vName" 
+                            value={vName} 
+                            onChange={(e) => setVName(e.target.value)} 
+                            placeholder="v1.0.0" 
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="vComments">Version Comments</Label>
+                        <Textarea 
+                            id="vComments" 
+                            value={vComments} 
+                            onChange={(e) => setVComments(e.target.value)} 
+                            placeholder="What changed in this version?"
+                            rows={3}
+                        />
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={onClose}>Cancel</Button>
+                    <Button onClick={() => onPublish(name, vName, vComments)}>Publish</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+};
+
 interface ProcessSheet {
   id: string;
   name: string;
   nodes: Node[];
   edges: Edge[];
+  type?: 'flow' | 'table';
+  cellData?: Record<string, string>;
+  columnWidths?: number[];
+  rowHeight?: number;
   lanes?: { id: string; name: string }[];
 }
 
@@ -115,6 +192,13 @@ interface ProcessCanvasProps {
   projectOwnerId?: string | null;
   currentUser?: any;
   onInit?: (instance: any) => void;
+  type?: 'flow' | 'table';
+  columnWidths?: number[];
+  onColumnResize?: (index: number, width: number) => void;
+  rowHeight?: number;
+  onRowHeightResize?: (height: number) => void;
+  cellData?: Record<string, string>;
+  onCellChange?: (id: string, value: string) => void;
   wrappedOnNodesChange?: OnNodesChange;
   wrappedOnEdgesChange?: OnEdgesChange;
   onNodeDragStart?: (event: React.MouseEvent, node: Node) => void;
@@ -155,7 +239,15 @@ const ProcessCanvas = ({
   saveHistory,
   checkForChanges,
   sheets,
-  handleSwitchSheet
+  handleSwitchSheet,
+  // Table props
+  type = 'flow',
+  columnWidths = DEFAULT_COLUMN_WIDTHS,
+  onColumnResize,
+  rowHeight = DEFAULT_ROW_HEIGHT,
+  onRowHeightResize,
+  cellData = {},
+  onCellChange
 }: ProcessCanvasProps) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
@@ -200,6 +292,8 @@ const ProcessCanvas = ({
 
       // project was renamed to screenToFlowPosition in v11.3
       // fallback for older versions or if instance not ready
+      if (!reactFlowInstance) return;
+
       const position = reactFlowInstance.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
@@ -220,7 +314,7 @@ const ProcessCanvas = ({
         wrappedOnNodesChange([{ type: 'add', item: newNode }]);
       }
     },
-    [reactFlowInstance, setNodes, wrappedOnNodesChange, saveHistory]
+    [reactFlowInstance, setNodes, wrappedOnNodesChange, saveHistory, isReadOnly]
   );
 
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
@@ -281,9 +375,14 @@ const ProcessCanvas = ({
 
   const { helperLines, calculateHelperLines, setHelperLines } = useHelperLines();
 
+  const totalWidth = useMemo(() => columnWidths.reduce((a, b) => a + b, 0), [columnWidths]);
+  const fullHeight = useMemo(() => ROWS_COUNT * rowHeight + HEADER_HEIGHT, [rowHeight]);
+
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      // If read only, we only allow dragging for assigned nodes
+      // Prevent header/table-specific nodes from being moved if needed
+      // (For now we allow standard nodes in flow mode)
+
       if (isReadOnly) {
         const draggingPositions = changes.filter(c => c.type === 'position' && (c as any).dragging);
         if (draggingPositions.length > 0) {
@@ -349,13 +448,14 @@ const ProcessCanvas = ({
         onNodesChange(nextChanges);
       }
     },
-    [nodes, onNodesChange, wrappedOnNodesChange, calculateHelperLines, setHelperLines, setEdges]
+    [nodes, onNodesChange, wrappedOnNodesChange, calculateHelperLines, setHelperLines, setEdges, isReadOnly, currentUser?.id]
   );
 
   return (
     <div className={cn("grow h-full relative flex flex-col", isPublished ? "bg-white" : "bg-gray-50")} ref={reactFlowWrapper}>
       <div className="grow relative">
             <ReactFlow
+                key={isReadOnly ? 'readonly' : 'editable'}
                 nodes={nodes}
                 edges={edges}
                 onNodesChange={handleNodesChange}
@@ -377,7 +477,14 @@ const ProcessCanvas = ({
                 nodesDraggable={!isReadOnly}
                 nodesConnectable={!isReadOnly}
                 elementsSelectable={true}
-                nodeExtent={undefined}
+                translateExtent={type === 'table' ? [
+                  [0, 0], 
+                  [totalWidth + ROW_LABEL_WIDTH + 200, fullHeight + 200]
+                ] : undefined}
+                nodeExtent={type === 'table' ? [
+                  [ROW_LABEL_WIDTH, HEADER_HEIGHT],
+                  [totalWidth + ROW_LABEL_WIDTH, fullHeight]
+                ] : undefined}
                 defaultEdgeOptions={{ 
                   type: 'editable-step',
                   markerEnd: {
@@ -389,13 +496,32 @@ const ProcessCanvas = ({
                   ? { stroke: '#ef4444', strokeDasharray: '5,5', strokeWidth: 2 } 
                   : { stroke: '#3b82f6', strokeWidth: 2 }}
                 deleteKeyCode={isReadOnly ? null : ['Backspace', 'Delete']}
-                // fitView // Disable fitView to respect lane coordinates
+                zoomOnScroll={type === 'table' ? false : true}
+                panOnScroll={type === 'table' ? true : false}
+                panOnScrollMode={type === 'table' ? PanOnScrollMode.Vertical : undefined}
             >
 
                 <Controls />
                 {!isPublished && <Background color="#aaa" gap={16} />}
                 <MiniMap />
                 <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
+                {type === 'table' && (
+                  <>
+                    <RowControls rowHeight={rowHeight} onRowHeightResize={onRowHeightResize!} />
+                    <TableHeader columnWidths={columnWidths} onColumnResize={onColumnResize!} />
+                    <TableGrid 
+                      columnWidths={columnWidths} 
+                      rowHeight={rowHeight} 
+                      cellData={cellData}
+                      onCellChange={onCellChange!}
+                      isReadOnly={isReadOnly}
+                    />
+                    <TableScrollbars 
+                      totalWidth={totalWidth + ROW_LABEL_WIDTH}
+                      totalHeight={fullHeight}
+                    />
+                  </>
+                )}
             </ReactFlow>
       </div>
 
@@ -424,7 +550,7 @@ const ProcessCanvas = ({
 };
 
 export default function CreateProcessPage() {
-  const { role, loading } = useUserRole();
+  const { role, loading, orgId } = useUserRole();
   const { user } = useUser();
   const { hasUnsavedChanges } = useNavigationState();
   const { setHasUnsavedChanges, setSaveAction } = useNavigationDispatch();
@@ -469,6 +595,11 @@ export default function CreateProcessPage() {
   const [versionName, setVersionName] = useState<string | null>(null);
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editingProjectNameValue, setEditingProjectNameValue] = useState('');
+
+  // Table State
+  const [columnWidths, setColumnWidths] = useState<number[]>(DEFAULT_COLUMN_WIDTHS);
+  const [rowHeight, setRowHeight] = useState<number>(DEFAULT_ROW_HEIGHT);
+  const [cellData, setCellData] = useState<Record<string, string>>({});
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
   const [isSaveVersionDialogOpen, setIsSaveVersionDialogOpen] = useState(false);
   const [isDeleteSheetDialogOpen, setIsDeleteSheetDialogOpen] = useState(false);
@@ -477,6 +608,7 @@ export default function CreateProcessPage() {
   const [newVersionComment, setNewVersionComment] = useState('');
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [editingSheetName, setEditingSheetName] = useState('');
+
   const [edgeStyle, setEdgeStyle] = useState<'blue-solid' | 'red-dashed'>('blue-solid');
   const [saveScope, setSaveScope] = useState<'all' | 'current'>('all');
 
@@ -507,20 +639,31 @@ export default function CreateProcessPage() {
     setDialogOpen(true);
   }, [projectPermission, user?.id, projectStatus, projectOwnerId]);
 
-  const handleAddSheet = () => {
+  const handleAddSheet = (type: 'flow' | 'table' = 'flow') => {
     const newSheetId = `sheet_${Date.now()}`;
     const newSheet: ProcessSheet = {
       id: newSheetId,
-      name: 'New Sheet',
-      nodes: [],
+      name: type === 'table' ? 'Work Sheet' : 'New Sheet',
+      nodes: type === 'table' ? [] : [],
       edges: [],
+      type: type,
+      cellData: type === 'table' ? {} : undefined,
+      columnWidths: type === 'table' ? DEFAULT_COLUMN_WIDTHS : undefined,
+      rowHeight: type === 'table' ? DEFAULT_ROW_HEIGHT : undefined,
     };
     
     // Save current sheet's state before switching
     const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
     let updatedSheets = [...sheets, newSheet];
     if (currentSheetIndex !== -1) {
-        updatedSheets[currentSheetIndex] = { ...updatedSheets[currentSheetIndex], nodes, edges };
+        updatedSheets[currentSheetIndex] = { 
+            ...updatedSheets[currentSheetIndex], 
+            nodes, 
+            edges,
+            cellData,
+            columnWidths,
+            rowHeight
+        };
     }
     
     setSheets(updatedSheets);
@@ -553,7 +696,14 @@ export default function CreateProcessPage() {
       const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
       if (currentSheetIndex !== -1) {
           const updatedSheets = [...sheets];
-          updatedSheets[currentSheetIndex] = { ...updatedSheets[currentSheetIndex], nodes, edges };
+          updatedSheets[currentSheetIndex] = { 
+            ...updatedSheets[currentSheetIndex], 
+            nodes, 
+            edges,
+            cellData,
+            columnWidths,
+            rowHeight
+          };
           setSheets(updatedSheets);
           // We continue with the updated sheets for the switch
           const newSheet = updatedSheets.find(s => s.id === sheetId);
@@ -566,6 +716,9 @@ export default function CreateProcessPage() {
             );
             setNodes(normalizedNodes);
             setEdges(newSheet.edges || []);
+            setCellData(newSheet.cellData || {});
+            setColumnWidths(newSheet.columnWidths || DEFAULT_COLUMN_WIDTHS);
+            setRowHeight(newSheet.rowHeight || DEFAULT_ROW_HEIGHT);
           }
           return;
       }
@@ -583,6 +736,9 @@ export default function CreateProcessPage() {
       );
       setNodes(normalizedNodes); // Load all nodes including lanes with their saved positions
       setEdges(newSheet.edges || []);
+      setCellData(newSheet.cellData || {});
+      setColumnWidths(newSheet.columnWidths || DEFAULT_COLUMN_WIDTHS);
+      setRowHeight(newSheet.rowHeight || DEFAULT_ROW_HEIGHT);
     }
   };
 
@@ -599,15 +755,21 @@ export default function CreateProcessPage() {
   };
 
   const isReadOnly = useMemo(() => {
-    if (projectId && projectPermission === null) return true;
-    if (projectPermission === 'viewer') return true;
-    if (projectStatus === 'published') return true;
-    return false;
-  }, [projectId, projectPermission, projectStatus]);
+    if (loading) return true;
+    
+    // Authorization check - ALWAYS allow editing if authorized, even if published
+    const isAuthorized = role === 'admin' || role === 'editor' || projectPermission === 'owner' || projectPermission === 'editor';
+    const result = !isAuthorized;
+    console.log(`[ACL] isReadOnly: ${result}, role: ${role}, projectPermission: ${projectPermission}, projectStatus: ${projectStatus}`);
+    return result;
+  }, [role, projectPermission, loading]);
+
+  const canEdit = useMemo(() => !isReadOnly, [isReadOnly]);
 
   const canUnlock = useMemo(() => {
-    return role === 'admin';
-  }, [role]);
+    if (loading) return false;
+    return role === 'admin' || role === 'editor' || projectPermission === 'owner' || projectPermission === 'editor';
+  }, [role, projectPermission, loading]);
 
   // History for Undo/Redo
   const { takeSnapshot, undo, redo, canUndo, canRedo } = useUndoRedo();
@@ -647,7 +809,14 @@ export default function CreateProcessPage() {
     const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
     let currentSheets = [...sheets];
     if (currentSheetIndex !== -1) {
-      currentSheets[currentSheetIndex] = { ...currentSheets[currentSheetIndex], nodes: nodesRef.current, edges: edgesRef.current };
+      currentSheets[currentSheetIndex] = { 
+        ...currentSheets[currentSheetIndex], 
+        nodes: nodesRef.current, 
+        edges: edgesRef.current,
+        cellData,
+        columnWidths,
+        rowHeight
+      };
     }
 
     // Compare with original
@@ -656,14 +825,18 @@ export default function CreateProcessPage() {
         id: s.id,
         name: s.name,
         nodes: s.nodes,
-        edges: s.edges
+        edges: s.edges,
+        type: s.type,
+        cellData: s.cellData,
+        columnWidths: s.columnWidths,
+        rowHeight: s.rowHeight
       })),
       projectName
     });
     const originalStateStr = JSON.stringify(originalSavedState);
 
     setHasUnsavedChanges(currentStateStr !== originalStateStr);
-  }, [originalSavedState, sheets, activeSheetId, projectName, projectId, processId]);
+  }, [originalSavedState, sheets, activeSheetId, cellData, columnWidths, rowHeight, projectName, projectId, processId]);
 
   // Save history on every change
   const saveHistory = useCallback(() => {
@@ -671,12 +844,18 @@ export default function CreateProcessPage() {
     takeSnapshot(nodesRef.current, edgesRef.current);
   }, [isReadOnly, takeSnapshot]);
 
+  // Update check for changes when relevant state changes
+  useEffect(() => {
+    checkForChanges();
+  }, [cellData, columnWidths, rowHeight, projectName, sheets, activeSheetId, checkForChanges]);
+
   const triggerJiraForSheets = useCallback(async (sheetsToProcess: ProcessSheet[]) => {
     let createdCount = 0;
     const newSheets = JSON.parse(JSON.stringify(sheetsToProcess));
     const jiraPromises: Promise<boolean>[] = [];
 
     for (const sheet of newSheets) {
+      // 1. Scan for Connections (Detailed Activity-WP tickets)
       for (const edge of sheet.edges) {
         const sourceNode = sheet.nodes.find((n: any) => n.id === edge.source);
         const targetNode = sheet.nodes.find((n: any) => n.id === edge.target);
@@ -700,6 +879,7 @@ export default function CreateProcessPage() {
                       metadata: {
                           project_name: projectName,
                           project_id: projectId || processId,
+                          project_type: 'freestyle'
                       }
                   });
 
@@ -713,6 +893,42 @@ export default function CreateProcessPage() {
                 return false;
               })());
             }
+          }
+        }
+      }
+
+      // 2. Scan for Standalone Assigned Activities (Standard Task tickets)
+      for (const node of sheet.nodes) {
+        if (node.type === 'activity' || node.type === 'process') {
+          const data = node.data || {};
+          const responsibility = data.responsibility || [];
+          const support = data.support || [];
+
+          // If assigned but no Jira ticket yet (and not already captured by connection logic above potentially, 
+          // though connection logic also updates the same node.data.jira_issue_id)
+          if ((responsibility.length > 0 || support.length > 0) && !data.jira_issue_id) {
+            jiraPromises.push((async () => {
+              try {
+                // We use connection-trigger even for standalone, just passing empty WP data
+                const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/jira/connection-trigger`, {
+                    activity_data: data,
+                    work_product_data: { label: "Standalone Task" },
+                    metadata: {
+                        project_name: projectName,
+                        project_id: projectId || processId,
+                        project_type: 'freestyle'
+                    }
+                });
+
+                if (response && response.data && response.data.jira_key) {
+                  node.data.jira_issue_id = response.data.jira_key;
+                  return true;
+                }
+              } catch (e) {
+                console.error("Failed to trigger Jira for standalone node", node.id, e);
+              }
+              return false;
+            })());
           }
         }
       }
@@ -891,6 +1107,9 @@ export default function CreateProcessPage() {
           setActiveSheetId(normalizedSheets[0].id);
           setNodes(normalizedSheets[0].nodes || []);
           setEdges(normalizedSheets[0].edges || []);
+          setCellData(normalizedSheets[0].cellData || {});
+          setColumnWidths(normalizedSheets[0].columnWidths || DEFAULT_COLUMN_WIDTHS);
+          setRowHeight(normalizedSheets[0].rowHeight || DEFAULT_ROW_HEIGHT);
           
           // Store original saved state
           setOriginalSavedState({
@@ -898,7 +1117,11 @@ export default function CreateProcessPage() {
               id: s.id,
               name: s.name,
               nodes: JSON.parse(JSON.stringify(s.nodes)),
-              edges: JSON.parse(JSON.stringify(s.edges))
+              edges: JSON.parse(JSON.stringify(s.edges)),
+              type: s.type,
+              cellData: s.cellData,
+              columnWidths: s.columnWidths,
+              rowHeight: s.rowHeight
             })),
             projectName: data.name || 'Untitled Project'
           });
@@ -949,6 +1172,9 @@ export default function CreateProcessPage() {
           setActiveSheetId(normalizedSheets[0].id);
           setNodes(normalizedSheets[0].nodes || []);
           setEdges(normalizedSheets[0].edges || []);
+          setCellData(normalizedSheets[0].cellData || {});
+          setColumnWidths(normalizedSheets[0].columnWidths || DEFAULT_COLUMN_WIDTHS);
+          setRowHeight(normalizedSheets[0].rowHeight || DEFAULT_ROW_HEIGHT);
           
           // Store original saved state
           setOriginalSavedState({
@@ -956,7 +1182,11 @@ export default function CreateProcessPage() {
               id: s.id,
               name: s.name,
               nodes: JSON.parse(JSON.stringify(s.nodes)),
-              edges: JSON.parse(JSON.stringify(s.edges))
+              edges: JSON.parse(JSON.stringify(s.edges)),
+              type: s.type,
+              cellData: s.cellData,
+              columnWidths: s.columnWidths,
+              rowHeight: s.rowHeight
             })),
             projectName: processData.name || 'Untitled Process'
           });
@@ -1014,7 +1244,14 @@ export default function CreateProcessPage() {
       const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
       let updatedSheets = [...sheets];
       if (currentSheetIndex !== -1) {
-        updatedSheets[currentSheetIndex] = { ...updatedSheets[currentSheetIndex], nodes, edges };
+        updatedSheets[currentSheetIndex] = { 
+          ...updatedSheets[currentSheetIndex], 
+          nodes, 
+          edges,
+          cellData,
+          columnWidths,
+          rowHeight
+        };
         setSheets(updatedSheets);
       }
 
@@ -1029,7 +1266,11 @@ export default function CreateProcessPage() {
           id: s.id,
           name: s.name,
           nodes: s.nodes, // Includes all nodes (including lanes) with their current positions
-          edges: s.edges
+          edges: s.edges,
+          type: s.type,
+          cellData: s.cellData,
+          columnWidths: s.columnWidths,
+          rowHeight: s.rowHeight
         }))
       }, {
         headers: { "X-Clerk-User-Id": user?.id }
@@ -1065,6 +1306,9 @@ export default function CreateProcessPage() {
             setActiveSheetId(data.sheets[0].id);
             setNodes(data.sheets[0].nodes || []);
             setEdges(data.sheets[0].edges || []);
+            setCellData(data.sheets[0].cellData || {});
+            setColumnWidths(data.sheets[0].columnWidths || DEFAULT_COLUMN_WIDTHS);
+            setRowHeight(data.sheets[0].rowHeight || DEFAULT_ROW_HEIGHT);
           }
         } else if (data.nodes) {
           // Legacy format
@@ -1072,6 +1316,9 @@ export default function CreateProcessPage() {
           setActiveSheetId('parent');
           setNodes(data.nodes || []);
           setEdges(data.edges || []);
+          setCellData({});
+          setColumnWidths(DEFAULT_COLUMN_WIDTHS);
+          setRowHeight(DEFAULT_ROW_HEIGHT);
         }
         toast.success('File loaded successfully!');
       } catch (error) {
@@ -1089,7 +1336,14 @@ export default function CreateProcessPage() {
     const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
     let updatedSheets = [...sheets];
     if (currentSheetIndex !== -1) {
-      updatedSheets[currentSheetIndex] = { ...updatedSheets[currentSheetIndex], nodes, edges };
+      updatedSheets[currentSheetIndex] = { 
+        ...updatedSheets[currentSheetIndex], 
+        nodes, 
+        edges,
+        cellData,
+        columnWidths,
+        rowHeight
+      };
       setSheets(updatedSheets);
     }
 
@@ -1106,7 +1360,7 @@ export default function CreateProcessPage() {
       setIsSaving(false);
       toast.success('Project exported successfully!');
     }, 1500);
-  }, [sheets, activeSheetId, nodes, edges, projectName]);
+  }, [sheets, activeSheetId, nodes, edges, cellData, columnWidths, rowHeight, projectName]);
 
   const handleLoadVersion = useCallback((versionName: string) => {
     if (isReadOnly) return;
@@ -1138,11 +1392,23 @@ export default function CreateProcessPage() {
         const firstVersionSheet = normalizedSheets[0];
         setNodes(firstVersionSheet.nodes || []);
         setEdges(firstVersionSheet.edges || []);
+        setCellData(firstVersionSheet.cellData || {});
+        setColumnWidths(firstVersionSheet.columnWidths || DEFAULT_COLUMN_WIDTHS);
+        setRowHeight(firstVersionSheet.rowHeight || DEFAULT_ROW_HEIGHT);
         
         setSheets(prev => {
           const updated = prev.map(s => 
             s.id === activeSheetId 
-              ? { ...s, name: firstVersionSheet.name, nodes: firstVersionSheet.nodes, edges: firstVersionSheet.edges }
+              ? { 
+                  ...s, 
+                  name: firstVersionSheet.name, 
+                  nodes: firstVersionSheet.nodes, 
+                  edges: firstVersionSheet.edges,
+                  type: firstVersionSheet.type,
+                  cellData: firstVersionSheet.cellData,
+                  columnWidths: firstVersionSheet.columnWidths,
+                  rowHeight: firstVersionSheet.rowHeight
+                }
               : s
           );
           
@@ -1158,6 +1424,9 @@ export default function CreateProcessPage() {
           setActiveSheetId(normalizedSheets[0].id);
           setNodes(normalizedSheets[0].nodes || []);
           setEdges(normalizedSheets[0].edges || []);
+          setCellData(normalizedSheets[0].cellData || {});
+          setColumnWidths(normalizedSheets[0].columnWidths || DEFAULT_COLUMN_WIDTHS);
+          setRowHeight(normalizedSheets[0].rowHeight || DEFAULT_ROW_HEIGHT);
         }
       }
 
@@ -1184,7 +1453,7 @@ export default function CreateProcessPage() {
     wrappedOnNodesChange([{ type: 'add', item: newLane }]);
   }, [isReadOnly, nodes, setNodes, wrappedOnNodesChange]);
 
-  const handleSaveProject = useCallback(async (status?: string) => {
+  const handleSaveProject = useCallback(async (status?: string, vName?: string, vComments?: string) => {
     // Allow saving if status is provided (e.g. for unlocking) even if isReadOnly is true
     if (!projectId || (isReadOnly && !status) || (!hasUnsavedChanges && !status)) return;
     
@@ -1195,7 +1464,14 @@ export default function CreateProcessPage() {
       const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
       let updatedSheets = [...sheets];
       if (currentSheetIndex !== -1) {
-        updatedSheets[currentSheetIndex] = { ...updatedSheets[currentSheetIndex], nodes, edges };
+        updatedSheets[currentSheetIndex] = { 
+          ...updatedSheets[currentSheetIndex], 
+          nodes, 
+          edges,
+          cellData,
+          columnWidths,
+          rowHeight
+        };
       }
 
       // Trigger Jira tickets if publishing
@@ -1213,13 +1489,19 @@ export default function CreateProcessPage() {
         id: s.id,
         name: s.name,
         nodes: s.nodes, 
-        edges: s.edges
+        edges: s.edges,
+        type: s.type,
+        cellData: s.cellData,
+        columnWidths: s.columnWidths,
+        rowHeight: s.rowHeight
       }));
 
       const payload: any = {
         name: projectName,
         sheets: sheetsToSave,
-        version_name: versionName
+        version_name: vName || versionName,
+        version_comments: vComments,
+        type: 'freestyle'
       };
 
       if (status) {
@@ -1265,10 +1547,17 @@ export default function CreateProcessPage() {
     } finally {
       setIsSaving(false);
     }
-  }, [projectId, isReadOnly, hasUnsavedChanges, sheets, activeSheetId, nodes, edges, projectName, versionName, triggerJiraForSheets, setHasUnsavedChanges]);
+  }, [projectId, isReadOnly, hasUnsavedChanges, sheets, activeSheetId, nodes, edges, cellData, columnWidths, rowHeight, projectName, versionName, triggerJiraForSheets, setHasUnsavedChanges]);
 
-  const handleSaveProcess = useCallback(async (status: 'draft' | 'published') => {
-    if (!user?.id || isReadOnly) return;
+  const handleSaveProcess = useCallback(async (status: 'draft' | 'published', vName?: string, vComments?: string) => {
+    if (!user?.id) return;
+    
+    // Check permission - either global admin/editor or project owner/editor
+    const isAuthorized = role === 'admin' || role === 'editor' || projectPermission === 'owner' || projectPermission === 'editor';
+    if (!isAuthorized) {
+        toast.error("You don't have permission to save this process");
+        return;
+    }
     
     setIsSaving(true);
     setLoadingMessage(status === 'published' ? 'Publishing Process...' : 'Saving Draft...');
@@ -1277,7 +1566,14 @@ export default function CreateProcessPage() {
       const currentSheetIndex = sheets.findIndex(s => s.id === activeSheetId);
       let updatedSheets = [...sheets];
       if (currentSheetIndex !== -1) {
-        updatedSheets[currentSheetIndex] = { ...updatedSheets[currentSheetIndex], nodes, edges };
+        updatedSheets[currentSheetIndex] = { 
+          ...updatedSheets[currentSheetIndex], 
+          nodes, 
+          edges,
+          cellData,
+          columnWidths,
+          rowHeight
+        };
       }
 
       // Trigger Jira tickets if publishing
@@ -1293,14 +1589,22 @@ export default function CreateProcessPage() {
 
       const payload = {
         user_id: user.id,
+        org_id: orgId,
         name: projectName,
         sheets: finalSheets.map(s => ({
           id: s.id,
           name: s.name,
           nodes: s.nodes,
-          edges: s.edges
+          edges: s.edges,
+          type: s.type,
+          cellData: s.cellData,
+          columnWidths: s.columnWidths,
+          rowHeight: s.rowHeight
         })),
-        status: status
+        status: status,
+        type: 'freestyle',
+        version_name: vName,
+        version_comments: vComments
       };
 
       if (processId) {
@@ -1315,8 +1619,12 @@ export default function CreateProcessPage() {
         }
       }
       
-      // Update local state after successful save
+      // Update local state and status immediately
       setSheets(finalSheets);
+      // Ensure we explicitly set the new status to refresh UI components that depend on it?
+      // Actually, we are moving away from status-based locking, but it's good to keep state consistent.
+      setProjectStatus(status);
+      
       if (status === 'published') {
         const activeSheetAfterJira = finalSheets.find((s: any) => s.id === activeSheetId);
         if (activeSheetAfterJira) {
@@ -1332,8 +1640,15 @@ export default function CreateProcessPage() {
         id: s.id,
         name: s.name,
         nodes: JSON.parse(JSON.stringify(s.nodes)),
-        edges: JSON.parse(JSON.stringify(s.edges))
+        edges: JSON.parse(JSON.stringify(s.edges)),
+        type: s.type,
+        cellData: s.cellData,
+        columnWidths: s.columnWidths,
+        rowHeight: s.rowHeight
       }));
+      
+      // Critical: Update local projectStatus state to reflect server state
+      if (status) setProjectStatus(status);
       
       setOriginalSavedState({
         sheets: sheetsToSave,
@@ -1347,7 +1662,7 @@ export default function CreateProcessPage() {
     } finally {
       setIsSaving(false);
     }
-  }, [user?.id, isReadOnly, sheets, activeSheetId, nodes, edges, projectName, processId, router, triggerJiraForSheets, setHasUnsavedChanges]);
+  }, [user?.id, isReadOnly, sheets, activeSheetId, nodes, edges, cellData, columnWidths, rowHeight, projectName, processId, router, triggerJiraForSheets, setHasUnsavedChanges]);
 
   useEffect(() => {
     const saveWrapper = async () => {
@@ -1647,9 +1962,11 @@ export default function CreateProcessPage() {
       setNodes={setNodes}
       edgeStyle={edgeStyle}
       setEdgeStyle={setEdgeStyle}
-      isPublished={projectStatus === 'published'}
+      // Critical change: Pass 'isReadOnly' status instead of 'projectStatus === published'.
+      // This ensures that authorized editors can interact with handles and resizers even if status is 'published'.
+      isPublished={isReadOnly} 
     >
-    <div className={cn("flex h-full flex-col", projectStatus === 'published' ? "bg-white" : "bg-gray-50")}>
+    <div className={cn("flex h-full flex-col", isReadOnly ? "bg-white" : "bg-gray-50")}>
       {/* Header Bar */}
       <div className="flex items-center justify-between border-b p-3 bg-white">
         <div className="flex items-center gap-2">
@@ -1741,16 +2058,7 @@ export default function CreateProcessPage() {
                 <Download size={18} />
                 {isSaving ? 'Exporting...' : 'Export'}
               </Button>
-              {projectStatus === 'published' ? (
-                canUnlock && (
-                  <Button
-                    onClick={() => handleSaveProject('draft')}
-                    className="bg-orange-600 hover:bg-orange-700 text-white"
-                  >
-                    Unlock Project
-                  </Button>
-                )
-              ) : (
+              {!isReadOnly && (
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
@@ -1765,28 +2073,33 @@ export default function CreateProcessPage() {
                     disabled={isSaving}
                     className="bg-blue-600 hover:bg-blue-700 text-white"
                   >
-                    Publish
+                    {projectStatus === 'published' ? 'Update & Publish' : 'Publish'}
                   </Button>
                 </div>
               )}
             </>
           ) : (
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={() => handleSaveProcess('draft')}
-                disabled={isReadOnly || isSaving}
-                className="border-blue-600 text-blue-600 hover:bg-blue-50 h-9 px-4"
-              >
-                {isSaving ? 'Saving...' : 'Save Draft'}
-              </Button>
-              <Button
-                onClick={() => handleSaveProcess('published')}
-                disabled={isReadOnly || isSaving}
-                className="bg-blue-600 hover:bg-blue-700 text-white h-9 px-4"
-              >
-                {isSaving ? 'Publishing...' : 'Publish'}
-              </Button>
+              {!isReadOnly && (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleSaveProcess('draft')}
+                    disabled={isSaving || !hasUnsavedChanges}
+                    className="border-blue-600 text-blue-600 hover:bg-blue-50 h-9 px-4"
+                  >
+                    {isSaving ? 'Saving...' : 'Save Draft'}
+                  </Button>
+                  <Button
+                    onClick={() => setIsPublishDialogOpen(true)}
+                    disabled={isSaving}
+                    className="bg-blue-600 hover:bg-blue-700 text-white h-9 px-4 gap-2"
+                  >
+                    <Rocket size={18} />
+                    {projectStatus === 'published' ? 'Update & Publish' : 'Publish'}
+                  </Button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -1805,33 +2118,58 @@ export default function CreateProcessPage() {
           showActions={!isProjectCanvas}
         />
         <ReactFlowProvider>
-          <ProcessCanvas
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            setNodes={setNodes}
-            setEdges={setEdges}
-            users={users}
-            isReadOnly={isReadOnly}
-            isPublished={projectStatus === 'published'}
-            projectId={projectId}
-            projectOwnerId={projectOwnerId}
-            currentUser={user}
-            onInit={setRfInstance}
-            onNodeDragStart={onNodeDragStart}
-            wrappedOnNodesChange={wrappedOnNodesChange}
-            wrappedOnEdgesChange={wrappedOnEdgesChange}
-            dialogOpen={dialogOpen}
-            setDialogOpen={setDialogOpen}
-            dialogData={dialogData}
-            edgeStyle={edgeStyle}
-            saveHistory={saveHistory}
-            checkForChanges={checkForChanges}
-            sheets={sheets}
-            handleSwitchSheet={handleSwitchSheet}
-          />
+          {(() => {
+            const activeSheet = sheets.find(s => s.id === activeSheetId);
+            return (
+              <ProcessCanvas
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                setNodes={setNodes}
+                setEdges={setEdges}
+                users={users}
+                isReadOnly={isReadOnly}
+                isPublished={projectStatus === 'published'}
+                projectId={projectId}
+                projectOwnerId={projectOwnerId}
+                currentUser={user}
+                onInit={setRfInstance}
+                onNodeDragStart={onNodeDragStart}
+                wrappedOnNodesChange={wrappedOnNodesChange}
+                wrappedOnEdgesChange={wrappedOnEdgesChange}
+                dialogOpen={dialogOpen}
+                setDialogOpen={setDialogOpen}
+                dialogData={dialogData}
+                edgeStyle={edgeStyle}
+                saveHistory={saveHistory}
+                checkForChanges={checkForChanges}
+                sheets={sheets}
+                handleSwitchSheet={handleSwitchSheet}
+                type={activeSheet?.type || 'flow'}
+                columnWidths={columnWidths}
+                onColumnResize={(index, width) => {
+                  setColumnWidths(prev => {
+                    const next = [...prev];
+                    next[index] = width;
+                    return next;
+                  });
+                  checkForChanges();
+                }}
+                rowHeight={rowHeight}
+                onRowHeightResize={(height) => {
+                  setRowHeight(height);
+                  checkForChanges();
+                }}
+                cellData={cellData}
+                onCellChange={(id, value) => {
+                  setCellData(prev => ({ ...prev, [id]: value }));
+                  checkForChanges();
+                }}
+              />
+            );
+          })()}
         </ReactFlowProvider>
       </div>
 
@@ -1860,7 +2198,11 @@ export default function CreateProcessPage() {
                 />
               ) : (
                 <>
-                  {sheet.id === 'parent' ? <Layout className="w-3 h-3 mr-1" /> : <FileSpreadsheet className="w-3 h-3 mr-1" />}
+                  {sheet.type === 'table' ? (
+                    <FileSpreadsheet className="w-3 h-3 mr-1 text-indigo-600" />
+                  ) : (
+                    sheet.id === 'parent' ? <Layout className="w-3 h-3 mr-1 text-blue-600" /> : <Layout className="w-3 h-3 mr-1 text-gray-600" />
+                  )}
                   <span>{sheet.name}</span>
                   {sheet.id !== 'parent' && !isReadOnly && (
                     <button
@@ -1875,42 +2217,47 @@ export default function CreateProcessPage() {
             </div>
           ))}
           <button
-            onClick={handleAddSheet}
+            onClick={() => handleAddSheet('flow')}
             disabled={isReadOnly}
             className={cn(
-              "p-1.5 rounded-full ml-2 text-gray-600",
+              "p-1.5 rounded-md ml-2 text-gray-600 flex items-center gap-1 text-xs font-semibold",
               isReadOnly ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-200"
             )}
             title={isReadOnly ? "Project is locked" : "Add Child Process"}
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3 h-3" />
+            <span>Child Process</span>
+          </button>
+          <button
+            onClick={() => handleAddSheet('table')}
+            disabled={isReadOnly}
+            className={cn(
+              "p-1.5 rounded-md ml-2 text-indigo-600 flex items-center gap-1 text-xs font-semibold bg-indigo-50",
+              isReadOnly ? "opacity-50 cursor-not-allowed" : "hover:bg-indigo-100"
+            )}
+            title={isReadOnly ? "Project is locked" : "Add Work Sheet (Table Style)"}
+          >
+            <FileSpreadsheet className="w-3 h-3" />
+            <span>Work Sheet</span>
           </button>
         </div>
       </div>
     </div>
 
-    <Dialog open={isPublishDialogOpen} onOpenChange={setIsPublishDialogOpen}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Publish Project</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to publish this project? Once published, it will be locked and no further changes can be made unless it is unlocked by an admin or editor.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setIsPublishDialogOpen(false)}>Cancel</Button>
-          <Button 
-            onClick={() => {
-              handleSaveProject('published');
-              setIsPublishDialogOpen(false);
-            }}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            Confirm Publish
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ProcessPublishDialog 
+        isOpen={isPublishDialogOpen}
+        onClose={() => setIsPublishDialogOpen(false)}
+        currentName={projectName}
+        onPublish={(name, vName, vComments) => {
+            setProjectName(name);
+            if (isProjectCanvas) {
+                handleSaveProject('published', vName, vComments);
+            } else {
+                handleSaveProcess('published', vName, vComments);
+            }
+            setIsPublishDialogOpen(false);
+        }}
+    />
 
     <Dialog open={isSaveVersionDialogOpen} onOpenChange={setIsSaveVersionDialogOpen}>
       <DialogContent>

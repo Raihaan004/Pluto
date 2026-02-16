@@ -12,6 +12,7 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import axios from 'axios';
 import { useUser } from '@clerk/nextjs';
+import { useUserRole } from '@/context/UserRoleContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -48,6 +49,7 @@ interface User {
 
 export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, projectOwnerId, isPublished, sheets = [] }: PropertiesPanelProps) => {
   const { user } = useUser();
+  const { role: userRole } = useUserRole();
   const [formData, setFormData] = useState<any>({
     label: '',
     state: 'None',
@@ -284,7 +286,9 @@ export const PropertiesPanel = ({ selectedNode, onSave, onClose, projectId, proj
 
   const isResponsible = formData.responsibility?.includes(user?.id);
   const isSupport = formData.support?.includes(user?.id);
-  const canEdit = !isPublished || isResponsible || isSupport;
+  const isOwner = projectOwnerId === user?.id;
+  const isAdmin = userRole === 'admin';
+  const canEdit = !isPublished || isResponsible || isSupport || isOwner || isAdmin;
 
   const handleStateChange = (newState: string) => {
     // We need to check permissions here.

@@ -23,7 +23,7 @@ interface User {
   role: string
   created_at: string
   image_url?: string
-  approval_status: 'pending' | 'approved' | 'rejected'
+  approval_status: 'pending' | 'approved' | 'rejected' | 'suspended'
   is_verified?: boolean
   organization?: string
   org_id?: string

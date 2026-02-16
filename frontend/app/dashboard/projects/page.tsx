@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button"
 import { useUser } from "@clerk/nextjs"
 import { toast } from "sonner"
 import axios from "axios"
-import { Plus, Folder, Calendar, Trash2, Clock, Users, Pencil } from "lucide-react"
+import { Plus, Folder, Calendar, Trash2, Clock, Users, Pencil, Layout, FileSpreadsheet } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import useSWR from 'swr'
 import { formatDistanceToNow } from "date-fns"
+import { cn } from "@/lib/utils"
 import {
   Dialog,
   DialogContent,
@@ -46,11 +47,13 @@ interface Project {
   collaborators: Collaborator[]
   user_id: string // Owner ID
   status?: string
+  type?: 'freestyle' | 'table'
 }
 
 interface Process {
   id: number
   name: string
+  type?: 'freestyle' | 'table'
   versions: { name: string; created_at: string; comments?: string }[]
 }
 
@@ -74,6 +77,7 @@ export default function ProjectsPage() {
   const [projectName, setProjectName] = useState("")
   const [selectedProcessId, setSelectedProcessId] = useState<string>("")
   const [selectedVersion, setSelectedVersion] = useState<string>("")
+  const [selectedStyle, setSelectedStyle] = useState<'freestyle' | 'table'>('freestyle')
 
   // Rename State
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false)
@@ -156,11 +160,14 @@ export default function ProjectsPage() {
     if (!user || !projectName || !selectedProcessId || !selectedVersion) return
 
     try {
+      const selectedProc = processes.find(p => p.id.toString() === selectedProcessId)
+      
       await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/projects`, {
         user_id: user.id,
         name: projectName,
         process_id: parseInt(selectedProcessId),
-        version_name: selectedVersion
+        version_name: selectedVersion,
+        type: selectedProc?.type || 'freestyle'
       })
       
       // Refresh projects
@@ -208,16 +215,16 @@ export default function ProjectsPage() {
               <Plus className="w-4 h-4 mr-2" /> Create New Project
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
+          <DialogContent className="sm:max-w-[700px]">
             <DialogHeader>
               <DialogTitle>Create New Project</DialogTitle>
               <DialogDescription>
                 Create a new project based on a specific version of a process.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
+            <div className="grid gap-6 py-4">
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="name" className="text-right">
+                <Label htmlFor="name" className="text-right font-semibold">
                   Project Label
                 </Label>
                 <Input
@@ -228,64 +235,128 @@ export default function ProjectsPage() {
                   className="col-span-3"
                 />
               </div>
+
+              <div className="grid grid-cols-4 items-start gap-4">
+                <Label className="text-right font-semibold pt-2">
+                  Process Style
+                </Label>
+                <div className="col-span-3 flex gap-4">
+                  <button
+                    onClick={() => { setSelectedStyle('freestyle'); setSelectedProcessId(""); setSelectedVersion(""); }}
+                    className={cn(
+                      "flex-1 flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all gap-2 shadow-sm",
+                      selectedStyle === 'freestyle' 
+                        ? "border-blue-600 bg-blue-50/50 text-blue-700 ring-2 ring-blue-100" 
+                        : "border-gray-100 hover:border-gray-200 text-gray-500 hover:bg-gray-50"
+                    )}
+                  >
+                    <div className={cn(
+                      "p-2 rounded-full",
+                      selectedStyle === 'freestyle' ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-400"
+                    )}>
+                      <Layout className="w-6 h-6" />
+                    </div>
+                    <span className="text-sm font-bold uppercase tracking-tight">Freestyle</span>
+                    <span className="text-[10px] text-gray-400 text-center font-normal">Flexible canvas layout for process mapping</span>
+                  </button>
+                  <button
+                    onClick={() => { setSelectedStyle('table'); setSelectedProcessId(""); setSelectedVersion(""); }}
+                    className={cn(
+                      "flex-1 flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all gap-2 shadow-sm",
+                      selectedStyle === 'table' 
+                        ? "border-indigo-600 bg-indigo-50/50 text-indigo-700 ring-2 ring-indigo-100" 
+                        : "border-gray-100 hover:border-gray-200 text-gray-500 hover:bg-gray-50"
+                    )}
+                  >
+                    <div className={cn(
+                      "p-2 rounded-full",
+                      selectedStyle === 'table' ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-400"
+                    )}>
+                      <FileSpreadsheet className="w-6 h-6" />
+                    </div>
+                    <span className="text-sm font-bold uppercase tracking-tight">Table Style</span>
+                    <span className="text-[10px] text-gray-400 text-center font-normal">Structured spreadsheet interface for detailed workflows</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="process" className="text-right">
+                <Label htmlFor="process" className="text-right font-semibold">
                   Process
                 </Label>
                 <Select onValueChange={setSelectedProcessId} value={selectedProcessId}>
                   <SelectTrigger className="col-span-3">
-                    <SelectValue placeholder="Select a process" />
+                    <SelectValue placeholder={`Select a ${selectedStyle} process`} />
                   </SelectTrigger>
                   <SelectContent>
                     {processes
-                      .filter(p => (p as any).status === 'published')
-                      .map((process) => (
-                        <SelectItem key={process.id} value={process.id.toString()}>
-                          {process.name}
-                        </SelectItem>
-                      ))}
+                      .filter(p => (p as any).status === 'published' && (p.type === selectedStyle || (!p.type && selectedStyle === 'freestyle')))
+                      .length > 0 ? (
+                        processes
+                          .filter(p => (p as any).status === 'published' && (p.type === selectedStyle || (!p.type && selectedStyle === 'freestyle')))
+                          .map((process) => (
+                            <SelectItem key={process.id} value={process.id.toString()}>
+                              {process.name}
+                            </SelectItem>
+                          ))
+                      ) : (
+                        <SelectItem value="none" disabled>No published {selectedStyle} processes found</SelectItem>
+                      )}
                   </SelectContent>
                 </Select>
               </div>
+
               {selectedProcess && (
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="version" className="text-right">
+                  <Label htmlFor="version" className="text-right font-semibold text-blue-600">
                     Version
                   </Label>
                   <Select onValueChange={setSelectedVersion} value={selectedVersion}>
-                    <SelectTrigger className="col-span-3 h-auto py-2">
-                      <SelectValue placeholder="Select a version" />
+                    <SelectTrigger className="col-span-3 h-auto py-2.5 border-blue-200 focus:ring-blue-100">
+                      <SelectValue placeholder="Select a specific version" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-[300px]">
                       {selectedProcess.versions?.length > 0 ? (
                         selectedProcess.versions.map((v, i) => (
                           <SelectItem key={i} value={v.name} className="py-3">
-                            <div className="flex flex-col gap-0.5 text-left w-full">
+                            <div className="flex flex-col gap-1 text-left w-full">
                               <div className="flex items-center justify-between gap-4">
-                                <span className="font-medium">{v.name}</span>
-                                <span className="text-[10px] text-gray-400 font-normal">
-                                  {new Date(v.created_at).toLocaleDateString()}
+                                <span className="font-bold text-gray-900">{v.name}</span>
+                                <span className="text-[10px] text-gray-400 font-medium bg-gray-50 px-2 py-0.5 rounded-full border">
+                                  {new Date(v.created_at).toLocaleDateString(undefined, {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric'
+                                  })}
                                 </span>
                               </div>
                               {v.comments && (
-                                <span className="text-xs text-gray-500 italic line-clamp-2 pr-4 leading-normal">
+                                <div className="text-xs text-gray-500 italic line-clamp-2 pr-4 leading-relaxed bg-blue-50/30 p-2 rounded-md border border-blue-50/50">
                                   "{v.comments}"
-                                </span>
+                                </div>
                               )}
                             </div>
                           </SelectItem>
                         ))
                       ) : (
-                        <SelectItem value="none" disabled>No versions available</SelectItem>
+                        <SelectItem value="none" disabled>No versions available for this process</SelectItem>
                       )}
                     </SelectContent>
                   </Select>
                 </div>
               )}
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleCreateProject} className="bg-green-600 hover:bg-green-700 text-white">Save Project</Button>
+            <DialogFooter className="bg-gray-50/50 p-6 -mx-6 -mb-6 rounded-b-lg border-t gap-3">
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="px-6 ring-1 ring-gray-200">
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleCreateProject} 
+                disabled={!projectName || !selectedProcessId || !selectedVersion}
+                className="bg-green-600 hover:bg-green-700 text-white px-8 shadow-md transition-all active:scale-95"
+              >
+                Launch Project
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

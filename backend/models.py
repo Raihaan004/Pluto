@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 class UserCreate(BaseModel):
@@ -10,7 +10,7 @@ class UserCreate(BaseModel):
     image_url: Optional[str] = None
     role: Optional[str] = None
     organization: Optional[str] = None
-    org_id: Optional[str] = None
+    org_id: Optional[Any] = None
 
 class User(UserCreate):
     id: int
@@ -24,23 +24,31 @@ class StatusUpdate(BaseModel):
 class ProcessSheet(BaseModel):
     id: str
     name: str
-    nodes: list
-    edges: list
-    lanes: list = []
+    nodes: List[Any]
+    edges: List[Any]
+    type: Optional[str] = 'flow'
+    lanes: List[Any] = []
+    cellData: Optional[Dict[str, Any]] = {}
+    columnWidths: Optional[List[float]] = []
+    rowHeight: Optional[float] = 80
 
 class ProcessPackageCreate(BaseModel):
     user_id: str
+    org_id: Optional[Any] = None
     name: str
-    sheets: list[ProcessSheet]
-    versions: list = []
-    status: str = 'Final'
+    sheets: List[ProcessSheet]
+    versions: List[Any] = []
+    status: str = 'draft'
+    type: str = 'freestyle'
+    version_name: Optional[str] = None
+    version_comments: Optional[str] = None
 
 class ProcessRename(BaseModel):
     name: str
 
 class ProcessVersionCreate(BaseModel):
     name: str
-    sheets: list[ProcessSheet]
+    sheets: List[ProcessSheet]
     comments: Optional[str] = None
 
 class ProjectCreate(BaseModel):
@@ -48,13 +56,15 @@ class ProjectCreate(BaseModel):
     name: str
     process_id: int
     version_name: str
+    type: str = 'freestyle'
 
 class ProjectUpdate(BaseModel):
-    sheets: Optional[list[ProcessSheet]] = None
+    sheets: Optional[List[ProcessSheet]] = None
     name: Optional[str] = None
-    progress: Optional[int] = None
+    progress: Optional[float] = None
     version_name: Optional[str] = None
     status: Optional[str] = None
+    type: Optional[str] = None
 
 class CollaboratorAdd(BaseModel):
     user_id: str

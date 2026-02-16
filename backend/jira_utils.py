@@ -30,9 +30,13 @@ def sync_task_to_jira(node_data, metadata, user_map=None):
     project_owner = metadata.get('project_owner', 'N/A')
     project_status = metadata.get('project_status', 'N/A')
     project_id = metadata.get('project_id')
+    project_type = metadata.get('project_type', 'freestyle') # base link on type
     
     frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
-    project_link = f"{frontend_url}/dashboard/process/create?projectId={project_id}" if project_id else None
+    
+    # Generate correct path based on project style
+    base_path = "table" if project_type == "table" else "create"
+    project_link = f"{frontend_url}/dashboard/process/{base_path}?projectId={project_id}" if project_id else None
 
     # Task title: [Project] Task Name
     summary = f"[{project_name}] {node_data.get('label', 'New Task')}"
@@ -73,10 +77,16 @@ def sync_task_to_jira(node_data, metadata, user_map=None):
         if responsibility_ids:
             resp_names = [user_map.get(uid, uid) for uid in responsibility_ids]
             details.append(f"* *Responsible:* {', '.join(resp_names)}")
+            resp_desc = node_data.get('responsibilitiesDescription')
+            if resp_desc:
+                details.append(f"* *Responsibility Details:* {resp_desc}")
             
         if support_ids:
             supp_names = [user_map.get(uid, uid) for uid in support_ids]
             details.append(f"* *Support:* {', '.join(supp_names)}")
+            supp_desc = node_data.get('rolesDescription')
+            if supp_desc:
+                details.append(f"* *Support Details:* {supp_desc}")
 
     description = "\n".join(details)
     
@@ -119,6 +129,12 @@ def create_connection_jira_ticket(activity_data, work_product_data, metadata, us
     user_map = user_map or {}
     project_key = JIRA_PROJECT_KEY.split('#')[0].strip()
     project_name = metadata.get('project_name', 'Unknown Project')
+    project_id = metadata.get('project_id')
+    project_type = metadata.get('project_type', 'freestyle')
+
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    base_path = "table" if project_type == "table" else "create"
+    project_link = f"{frontend_url}/dashboard/process/{base_path}?projectId={project_id}" if project_id else None
     
     # Activity Details
     activity_name = activity_data.get('label', 'Unknown Activity')
@@ -142,11 +158,23 @@ def create_connection_jira_ticket(activity_data, work_product_data, metadata, us
     
     wp_links = work_product_data.get('links', [])
 
-    summary = f"[{project_name}] Activity: {activity_name} linked to Work Product: {wp_name}"
+    is_standalone = wp_name == "Standalone Task" or wp_name == "Table Step Detail"
+    
+    if is_standalone:
+        summary = f"[{project_name}] Activity: {activity_name}"
+    else:
+        summary = f"[{project_name}] Activity: {activity_name} linked to Work Product: {wp_name}"
     
     details = []
-    details.append(f"h1. Activity Connection: {activity_name} -> {wp_name}")
+    if is_standalone:
+        details.append(f"h1. Activity: {activity_name}")
+    else:
+        details.append(f"h1. Activity Connection: {activity_name} -> {wp_name}")
+        
     details.append(f"Generated from Pluto connection trigger.")
+
+    if project_link:
+        details.append(f"View in Pluto: [{project_link}|{project_link}]")
     
     details.append(f"\nh2. Activity Details")
     details.append(f"* *Name:* {activity_name}")
@@ -163,26 +191,27 @@ def create_connection_jira_ticket(activity_data, work_product_data, metadata, us
         details.append(f"* *Support:* {', '.join(supp_names)}")
         details.append(f"* *Support Description:* {supp_desc}")
 
-    details.append(f"\nh2. Linked Work Product Details")
-    details.append(f"* *Name:* {wp_name}")
-    details.append(f"* *State:* {wp_state}")
-    details.append(f"* *Description:* {wp_desc}")
-    details.append(f"* *Linked Flow ID:* {wp_linked_flow}")
-    
-    details.append(f"\nh3. Comments")
-    details.append(f"* *Author Comments:* {wp_author_comments}")
-    details.append(f"* *Reviewer Comments:* {wp_reviewer_comments}")
-    details.append(f"* *Verification Comments:* {wp_verification_comments}")
-    
-    if wp_links:
-        details.append(f"\nh3. Links")
-        for link in wp_links:
-            if isinstance(link, dict):
-                l_url = link.get('url', '')
-                l_label = link.get('label', 'Link')
-                details.append(f"* [{l_label}|{l_url}]")
-            else:
-                details.append(f"* {link}")
+    if not is_standalone:
+        details.append(f"\nh2. Linked Work Product Details")
+        details.append(f"* *Name:* {wp_name}")
+        details.append(f"* *State:* {wp_state}")
+        details.append(f"* *Description:* {wp_desc}")
+        details.append(f"* *Linked Flow ID:* {wp_linked_flow}")
+        
+        details.append(f"\nh3. Comments")
+        details.append(f"* *Author Comments:* {wp_author_comments}")
+        details.append(f"* *Reviewer Comments:* {wp_reviewer_comments}")
+        details.append(f"* *Verification Comments:* {wp_verification_comments}")
+        
+        if wp_links:
+            details.append(f"\nh3. Links")
+            for link in wp_links:
+                if isinstance(link, dict):
+                    l_url = link.get('url', '')
+                    l_label = link.get('label', 'Link')
+                    details.append(f"* [{l_label}|{l_url}]")
+                else:
+                    details.append(f"* {link}")
 
     description = "\n".join(details)
     
