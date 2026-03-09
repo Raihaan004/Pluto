@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import axios from "axios"
 import { Plus, Folder, Calendar, Trash2, Clock, Users, Pencil, Layout, FileSpreadsheet } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { useUserRole } from "@/context/UserRoleContext"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import useSWR from 'swr'
 import { formatDistanceToNow } from "date-fns"
@@ -70,6 +71,7 @@ const fetcherWithHeader = ([url, token]: [string, string]) => axios.get(url, { h
 
 export default function ProjectsPage() {
   const { user } = useUser()
+  const { orgId } = useUserRole()
   const router = useRouter()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   
@@ -167,7 +169,8 @@ export default function ProjectsPage() {
         name: projectName,
         process_id: parseInt(selectedProcessId),
         version_name: selectedVersion,
-        type: selectedProc?.type || 'freestyle'
+        type: selectedProc?.type || 'freestyle',
+        org_id: orgId ? parseInt(orgId) : null
       })
       
       // Refresh projects

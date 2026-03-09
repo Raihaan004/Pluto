@@ -1,15 +1,26 @@
 from fastapi import FastAPI, HTTPException, Header, Query, BackgroundTasks, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
+import os
+import asyncio
+from datetime import datetime
+from typing import Optional, List, Dict, Any
+from database import admin_supabase, get_db, engine, Base, SessionLocal
+from models import (
+    UserCreate, RoleUpdate, StatusUpdate, ProcessPackageCreate, ProcessRename, 
+    ProcessVersionCreate, ProjectCreate, ProjectUpdate, CollaboratorAdd, 
+    ConnectionJiraTrigger, LicenseVerify,
+    UserDB, PendingUserDB, InstanceSettingsDB, ProcessDB, ProjectDB, NotificationDB
+)
 
 # Add a check for suspension status that can be used as a dependency
-async def check_suspension():
+async def check_suspension(db: Session = Depends(get_db)):
     try:
-        instance = supabase.table("instance_settings").select("*").limit(1).execute()
-        if instance.data:
-            local_instance = instance.data[0]
+        local_instance = db.query(InstanceSettingsDB).first()
+        if local_instance and admin_supabase:
             # Check remote status
-            admin_res = admin_supabase.table("organizations").select("status").eq("id", local_instance["org_id"]).execute()
+            admin_res = admin_supabase.table("organizations").select("status").eq("id", local_instance.org_id).execute()
             if admin_res.data and admin_res.data[0]["status"] != "active":
                 raise HTTPException(status_code=403, detail="Instance Suspended: Access denied by Pluto Admin.")
     except HTTPException as he:
@@ -21,12 +32,6 @@ async def check_suspension():
 # You can apply this to the whole app or specific routers
 # For now, let's update the instance-status and add a middleware-like check
 from pydantic import BaseModel
-from database import supabase, admin_supabase
-from models import (
-    UserCreate, RoleUpdate, StatusUpdate, ProcessPackageCreate, ProcessRename, 
-    ProcessVersionCreate, ProjectCreate, ProjectUpdate, CollaboratorAdd, 
-    ConnectionJiraTrigger, LicenseVerify
-)
 from typing import Optional
 from datetime import datetime
 from jira_utils import sync_task_to_jira, create_connection_jira_ticket
@@ -35,6 +40,9 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Create database tables if they don't exist
+Base.metadata.create_all(bind=engine)
 
 import traceback
 
@@ -93,44 +101,36 @@ async def log_errors_middleware(request: Request, call_next):
         
         # Performance Tracking: Log successful metrics
         process_time = int((time.time() - start_time) * 1000)
-        if not request.url.path.startswith("/_next"):
-            try:
-                supabase.table("api_metrics").insert({
-                    "endpoint": request.url.path,
-                    "method": request.method,
-                    "latency_ms": process_time,
-                    "status_code": response.status_code,
-                    "user_id": request.headers.get("X-Clerk-User-Id")
-                }).execute()
-            except: pass # Don't block on metrics failure
-
+        # Note: We are skipping local metrics table for now as it's not in the core models
+        # and would slow down every request.
+        
         return response
     except Exception as e:
         # 1. Capture the error details
-        error_msg = str(e)
-        stack_trace = traceback.format_exc()
+        error_msg = traceback.format_exc()
+        stack_trace = error_msg
         endpoint = f"{request.method} {request.url.path}"
         user_id = request.headers.get("X-Clerk-User-Id")
         
         print(f"🚨 CRITICAL ERROR: {error_msg}")
         
         # 2. Log to Database
+        db = SessionLocal()
         try:
-            log_data = {
-                "level": "error",
-                "category": "api",
-                "message": error_msg,
-                "stack_trace": stack_trace,
-                "endpoint": endpoint,
-                "user_id": user_id,
-                "metadata": {
-                    "query_params": str(request.query_params),
-                    "client_host": request.client.host if request.client else "unknown"
-                }
-            }
-            supabase.table("system_logs").insert(log_data).execute()
+            log_entry = NotificationDB(
+                user_id=user_id or "system",
+                type="error",
+                title=f"API Error: {endpoint}",
+                message=f"Error: {error_msg}\n\nStack Trace:\n{stack_trace}",
+                read=False
+            )
+            db.add(log_entry)
+            db.commit()
         except Exception as log_err:
             print(f"⚠️ Failed to log error to DB: {log_err}")
+            db.rollback()
+        finally:
+            db.close()
 
         return JSONResponse(
             status_code=500,
@@ -140,13 +140,13 @@ async def log_errors_middleware(request: Request, call_next):
 @app.on_event("startup")
 async def startup_event():
     """Perform initial instance status check on startup"""
+    db = SessionLocal()
     try:
-        instance_res = supabase.table("instance_settings").select("*").limit(1).execute()
-        if instance_res.data:
-            local_instance = instance_res.data[0]
+        local_instance = db.query(InstanceSettingsDB).first()
+        if local_instance:
             global INSTANCE_STATUS_CACHE
-            INSTANCE_STATUS_CACHE["is_suspended"] = str(local_instance.get("status", "active")).lower() != "active"
-            INSTANCE_STATUS_CACHE["org_name"] = local_instance.get("org_name", "Unknown")
+            INSTANCE_STATUS_CACHE["is_suspended"] = str(getattr(local_instance, "status", "active")).lower() != "active"
+            INSTANCE_STATUS_CACHE["org_name"] = getattr(local_instance, "org_name", "Unknown")
             INSTANCE_STATUS_CACHE["last_check"] = datetime.now()
             print(f"✅ Instance Status Initialized: {'SUSPENDED' if INSTANCE_STATUS_CACHE['is_suspended'] else 'ACTIVE'} ({INSTANCE_STATUS_CACHE['org_name']})")
             
@@ -155,6 +155,8 @@ async def startup_event():
             asyncio.create_task(pulse_heartbeat(local_instance))
             
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"⚠️ Warning: Could not initialize instance status: {e}")
 
 async def pulse_heartbeat(instance_settings):
@@ -165,9 +167,9 @@ async def pulse_heartbeat(instance_settings):
     import random
     import psutil
     
-    org_id = instance_settings.get("org_id")
-    org_name = instance_settings.get("org_name")
-    server_id = instance_settings.get("server_id", "local-node")
+    org_id = getattr(instance_settings, "org_id", None)
+    org_name = getattr(instance_settings, "org_name", "Unknown")
+    server_id = "local-node"
     
     while True:
         try:
@@ -182,19 +184,20 @@ async def pulse_heartbeat(instance_settings):
                status = "degraded"
             
             # 3. Update Admin Monitoring DB
-            admin_supabase.table("instance_health").upsert({
-                "organization_id": org_id,
-                "org_name": org_name,
-                "status": status,
-                "cpu_usage": cpu_usage,
-                "memory_usage": memory_usage,
-                "latency": f"{random.randint(10, 150)}ms",
-                "uptime": "99.99%",
-                "server_id": server_id,
-                "last_heartbeat": datetime.now().isoformat()
-            }, on_conflict="organization_id").execute()
-            
-            print(f"💓 Heartbeat synced for {org_name} (ID: {org_id})")
+            if admin_supabase:
+                admin_supabase.table("instance_health").upsert({
+                    "organization_id": org_id,
+                    "org_name": org_name,
+                    "status": status,
+                    "cpu_usage": cpu_usage,
+                    "memory_usage": memory_usage,
+                    "latency": f"0ms",
+                    "uptime": "99.99%",
+                    "server_id": server_id,
+                    "last_heartbeat": datetime.now().isoformat()
+                }, on_conflict="organization_id").execute()
+                
+                print(f"💓 Heartbeat synced for {org_name} (ID: {org_id})")
             
         except Exception as e:
             print(f"💓 Heartbeat Error: {e}")
@@ -222,27 +225,27 @@ def read_root():
     return {"Hello": "World", "status": "Backend is running"}
 
 @app.get("/health")
-def health_check():
-    """Health check endpoint to verify Supabase connection"""
+def health_check(db: Session = Depends(get_db)):
+    """Health check endpoint to verify database connection"""
     try:
-        # Try a simple query to verify Supabase connection
-        test_response = supabase.table("users").select("id").limit(1).execute()
+        # Try a simple query to verify database connection
+        db.execute("SELECT 1")
         return {
             "status": "healthy",
-            "supabase_connected": True,
-            "message": "Backend and Supabase are connected successfully"
+            "db_connected": True,
+            "message": "Backend and Local Database are connected successfully"
         }
     except Exception as e:
         return {
             "status": "unhealthy",
-            "supabase_connected": False,
+            "db_connected": False,
             "error": str(e),
-            "message": "Backend is running but Supabase connection failed. Check SUPABASE_URL and SUPABASE_KEY environment variables."
+            "message": "Backend is running but Local Database connection failed."
         }
 
 
 @app.post("/verify-license")
-async def verify_and_setup_instance(data: LicenseVerify):
+async def verify_and_setup_instance(data: LicenseVerify, db: Session = Depends(get_db)):
     """
     Connects to Pluto Admin to verify license and organization details.
     If valid, stores the configuration in the local database.
@@ -259,14 +262,12 @@ async def verify_and_setup_instance(data: LicenseVerify):
             "app_version": data.app_version
         }
         
-
         import requests
         print(f"DEBUG: Connecting to {verify_url}")
         response = requests.post(verify_url, json=payload)
         
         print(f"DEBUG: Response Status: {response.status_code}")
         print(f"DEBUG: Response Content: {response.text[:200]}") # Print first 200 chars
-
 
         if response.status_code != 200:
             error_detail = f"Verification failed with status {response.status_code}"
@@ -281,28 +282,20 @@ async def verify_and_setup_instance(data: LicenseVerify):
         
         # 2. Store in Local Database
         # Clean existing settings first (assuming single tenant)
-        supabase.table("instance_settings").delete().neq("id", 0).execute()
+        db.query(InstanceSettingsDB).delete()
         
-        new_instance = {
-            "org_id": verification_data["org_id"],
-            "org_name": verification_data["org_name"],
-            "org_code": verification_data["org_code"],
-            "license_key": data.license_id,
-            "status": "active",
-            "last_synced_at": datetime.utcnow().isoformat(),
-            "admin_email": data.email_id
-        }
-        
-        
-        insert_res = supabase.table("instance_settings").insert(new_instance).execute()
-        
-        if not insert_res.data:
-             # Wait! If we deleted everything, maybe the insert failed because we didn't get return value?
-             # Check if it was inserted
-             check = supabase.table("instance_settings").select("*").eq("org_code", verification_data["org_code"]).execute()
-             if not check.data:
-                 print("Insert Failed - No Data Returned")
-                 raise HTTPException(status_code=500, detail="Failed to save instance settings locally")
+        new_instance = InstanceSettingsDB(
+            org_id=str(verification_data["org_id"]),
+            org_name=verification_data["org_name"],
+            org_code=verification_data["org_code"],
+            license_key=data.license_id,
+            status="active",
+            last_synced_at=datetime.utcnow(),
+            admin_email=data.email_id
+        )
+        db.add(new_instance)
+        db.commit()
+        db.refresh(new_instance)
              
         # Update cache
         global INSTANCE_STATUS_CACHE
@@ -312,98 +305,99 @@ async def verify_and_setup_instance(data: LicenseVerify):
         # 3. Promote Admin User if exists
         try:
             admin_email = data.email_id.strip()
-            # Try exact match first
-            user_check = supabase.table("users").select("*").eq("email", admin_email).execute()
-            
-            # If not found, try case insensitive match (if Supabase allows ilike or similar, or just python filter)
-            if not user_check.data:
-                 print(f"ℹ️ Exact match for {admin_email} failed. checking all users (slow but safe for setup).")
-                 all_users = supabase.table("users").select("*").execute()
-                 if all_users.data:
-                     # manual filter
-                     found_users = [u for u in all_users.data if str(u.get("email")).lower() == admin_email.lower()]
-                     if found_users:
-                         user_check.data = [found_users[0]]
+            # Try matching existing user
+            user = db.query(UserDB).filter(UserDB.email.ilike(admin_email)).first()
 
-            if user_check.data and len(user_check.data) > 0:
-                user_id = user_check.data[0]["id"]
+            if user:
                 print(f"✅ Found existing user for admin email {admin_email}. Promoting to Admin.")
-                
-                update_payload = {
-                    "role": "admin",
-                    "org_id": str(verification_data["org_id"]),
-                    "organization": verification_data["org_name"],
-                    "is_verified": True,
-                    "approval_status": "approved"
-                }
-                
-                up_res = supabase.table("users").update(update_payload).eq("id", user_id).execute()
-                print(f"DEBUG: User update result: {up_res.data}")
+                user.role = "admin"
+                user.org_id = str(verification_data["org_id"])
+                user.organization = verification_data["org_name"]
+                user.is_verified = True
+                user.approval_status = "approved"
+                db.commit()
             else:
                 print(f"ℹ️ User with email {admin_email} not found yet. They will need to sign up.")
                 
         except Exception as e:
             print(f"⚠️ Failed to promote admin user: {e}")
+            db.rollback()
             # Don't fail the whole request, just log it
         
         return {"status": "verified", "detail": "Instance activated successfully"}
-
 
     except HTTPException as he:
         raise he
     except Exception as e:
         print(f"Verification Error: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/instance-status")
-def get_instance_status():
+def get_instance_status(db: Session = Depends(get_db)):
     """
     Checks the status of this local instance by verifying its identity with the 
     central Pluto Admin database. Ensures the hosted project remains connected.
     """
     try:
         # 1. Look for local instance settings
-        instance_res = supabase.table("instance_settings").select("*").limit(1).execute()
-        if not instance_res.data:
+        local_instance = db.query(InstanceSettingsDB).first()
+        if not local_instance:
             return {"is_activated": False}
 
-        local_instance = instance_res.data[0]
-        org_id = local_instance["org_id"]
+        org_id = local_instance.org_id
         
         # 2. Remote check against Pluto Admin database
-        # Convert org_id to int to ensure correct bigint comparison in Supabase/Postgres
-        target_id = org_id
-        try:
-            if isinstance(org_id, str) and org_id.isdigit():
-                target_id = int(org_id)
-        except:
-            pass
-            
-        admin_res = admin_supabase.table("organizations").select("status, plan, name").eq("id", target_id).execute()
-            
-        if not admin_res.data:
-            print(f"❌ CRITICAL: Local Org ID '{org_id}' (Target: {target_id}) not found in Admin DB!")
-            # Try to find by name as a fallback for robustness
-            admin_res = admin_supabase.table("organizations").select("status, plan, name").ilike("name", local_instance.get("org_name", "")).execute()
-            
+        if admin_supabase:
+            target_id = org_id
+            try:
+                if isinstance(org_id, str) and org_id.isdigit():
+                    target_id = int(org_id)
+            except:
+                pass
+                
+            admin_res = admin_supabase.table("organizations").select("status, plan, name").eq("id", target_id).execute()
+                
             if not admin_res.data:
-                return {
-                    "is_activated": True,
-                    "is_suspended": False,
-                    "error": f"Organization '{org_id}' not found."
-                }
+                print(f"❌ CRITICAL: Local Org ID '{org_id}' not found in Admin DB!")
+                # Try to find by name as a fallback
+                admin_res = admin_supabase.table("organizations").select("status, plan, name").ilike("name", local_instance.org_name).execute()
+                
+                if not admin_res.data:
+                    return {
+                        "is_activated": True,
+                        "is_suspended": False,
+                        "error": f"Organization '{org_id}' not found."
+                    }
 
-        central_org = admin_res.data[0]
-        
-        # 3. Handle status changes (e.g. suspension)
-        # FORCE check against 'active' - if it's 'suspended' or anything else, block it
-        status_value = str(central_org.get("status", "active")).lower().strip()
-        is_suspended = status_value != "active"
-        
-        print(f"🔄 [SYNC] Org: {central_org['name']} | Remote Status: '{status_value}' | Blocked: {is_suspended}")
-        
-        # 4. Update Global Cache
-        global INSTANCE_STATUS_CACHE
+            central_org = admin_res.data[0]
+            
+            # 3. Handle status changes (e.g. suspension)
+            status_value = str(central_org.get("status", "active")).lower().strip()
+            is_suspended = status_value != "active"
+            
+            # 4. Update Global Cache
+            global INSTANCE_STATUS_CACHE
+            INSTANCE_STATUS_CACHE["is_suspended"] = is_suspended
+            INSTANCE_STATUS_CACHE["org_name"] = central_org['name']
+            INSTANCE_STATUS_CACHE["last_check"] = datetime.utcnow().isoformat()
+            
+            return {
+                "is_activated": True,
+                "is_suspended": is_suspended,
+                "org_name": central_org["name"],
+                "plan": central_org.get("plan", "Standard"),
+                "status": status_value
+            }
+        else:
+            # No admin sync, trust local state
+            return {
+                "is_activated": True,
+                "is_suspended": False,
+                "org_name": local_instance.org_name,
+                "plan": local_instance.plan or "Standard",
+                "status": "active"
+            }
         INSTANCE_STATUS_CACHE["is_suspended"] = is_suspended
         INSTANCE_STATUS_CACHE["org_name"] = central_org["name"]
         INSTANCE_STATUS_CACHE["last_check"] = datetime.now()
@@ -411,16 +405,13 @@ def get_instance_status():
         # 5. Sync status and plan changes locally if they happened in Admin panel
         # Check if plan exists in local_instance before verifying change to likely
         # avoid key error if plan column is missing in older instances
-        current_plan = local_instance.get("plan")
-        current_status = local_instance.get("status")
+        current_plan = local_instance.plan
+        current_status = local_instance.status
         
         if central_org.get("plan") != current_plan or central_org.get("status") != current_status:
-            update_data = {}
-            if central_org.get("plan"): update_data["plan"] = central_org["plan"]
-            if central_org.get("status"): update_data["status"] = central_org["status"]
-            
-            if update_data:
-                supabase.table("instance_settings").update(update_data).eq("org_id", org_id).execute()
+            if central_org.get("plan"): local_instance.plan = central_org["plan"]
+            if central_org.get("status"): local_instance.status = central_org["status"]
+            db.commit()
 
         return {
             "is_activated": True,
@@ -442,11 +433,10 @@ def get_instance_status():
 
 
 @app.post("/users")
-def create_or_update_user(user: UserCreate):
+def create_or_update_user(user: UserCreate, db: Session = Depends(get_db)):
     try:
         # 0. Fetch Instance Settings for Auto-Approval / Org Linkage
-        instance_res = supabase.table("instance_settings").select("*").limit(1).execute()
-        local_instance = instance_res.data[0] if instance_res.data else None
+        local_instance = db.query(InstanceSettingsDB).first()
         
         # 1. Prepare data for update
         user_data = user.model_dump(exclude_unset=True)
@@ -454,8 +444,9 @@ def create_or_update_user(user: UserCreate):
             del user_data["role"]
             
         # --- AUTO APPROVE ADMIN LOGIC (START) ---
+        is_approved = False
         if local_instance and user.email:
-            admin_email = str(local_instance.get("admin_email", "")).strip().lower()
+            admin_email = str(local_instance.admin_email or "").strip().lower()
             user_email = user.email.strip().lower()
             
             if admin_email and admin_email == user_email:
@@ -463,83 +454,83 @@ def create_or_update_user(user: UserCreate):
                 user_data["role"] = "admin"
                 user_data["is_verified"] = True
                 user_data["approval_status"] = "approved"
-                user_data["org_id"] = local_instance["org_id"]
-                user_data["organization"] = local_instance["org_name"]
+                user_data["org_id"] = local_instance.org_id
+                user_data["organization"] = local_instance.org_name
+                is_approved = True
             
             elif not user_data.get("org_id"):
-                 user_data["org_id"] = local_instance["org_id"]
-                 user_data["organization"] = local_instance["org_name"]
+                 user_data["org_id"] = local_instance.org_id
+                 user_data["organization"] = local_instance.org_name
         # --- AUTO APPROVE ADMIN LOGIC (END) ---
 
-        # 2. Check if user already exists in MAIN table (by CLERK_ID or EMAIL)
-        is_approved = user_data.get("approval_status") == "approved"
-        
-        # Check by clerk_id
-        existing_by_clerk = supabase.table("users").select("id, clerk_id, email, approval_status").eq("clerk_id", user.clerk_id).execute()
-        
-        # Check by email if not found by clerk_id
-        existing_user = existing_by_clerk.data[0] if existing_by_clerk.data else None
-        if not existing_user and user.email:
-            existing_by_email = supabase.table("users").select("id, clerk_id, email, approval_status").eq("email", user.email).execute()
-            if existing_by_email.data:
-                existing_user = existing_by_email.data[0]
-                print(f"🔗 Linking existing approved user by email: {user.email}")
+        # 2. Check if user already exists in MAIN table
+        existing_user = db.query(UserDB).filter(
+            (UserDB.clerk_id == user.clerk_id) | (UserDB.email == user.email)
+        ).first()
         
         if existing_user or is_approved:
-            # We found them in main table OR they are auto-approved
-            target_clerk_id = existing_user["clerk_id"] if existing_user else user.clerk_id
-            
-            # Update main users table
-            # If we found by email but clerk_id is different, this updates to the new clerk_id
-            response = supabase.table("users").update(user_data).eq("clerk_id", target_clerk_id).execute()
-            
-            # Clean up pending table if they were there (by email or clerk_id)
-            if existing_user and user.email:
-                supabase.table("pending_users").delete().eq("email", user.email).execute()
-            supabase.table("pending_users").delete().eq("clerk_id", user.clerk_id).execute()
-
-            if response.data:
-                return {"status": "updated", "data": response.data}
+            if existing_user:
+                # Update main users table
+                for key, value in user_data.items():
+                    setattr(existing_user, key, value)
+                db.commit()
+                db.refresh(existing_user)
                 
-            # Fallback: Create in main table if they should be there but weren't found
-            insert_data = user.model_dump()
-            if local_instance:
-                insert_data["organization"] = local_instance["org_name"]
-                insert_data["org_id"] = local_instance["org_id"]
-                if user.email and str(local_instance.get("admin_email", "")).strip().lower() == user.email.strip().lower():
-                    insert_data["role"] = "admin"
-                    insert_data["is_verified"] = True
-                    insert_data["approval_status"] = "approved"
-            
-            if not insert_data.get("role"): insert_data["role"] = "viewer"
-            if "approval_status" not in insert_data: insert_data["approval_status"] = "approved" if is_approved else "pending"
-            if "is_verified" not in insert_data: insert_data["is_verified"] = True if is_approved else False
-            
-            data = supabase.table("users").insert(insert_data).execute()
-            return {"status": "created", "data": data.data}
+                # Clean up pending table
+                db.query(PendingUserDB).filter(
+                    (PendingUserDB.clerk_id == user.clerk_id) | (PendingUserDB.email == user.email)
+                ).delete()
+                db.commit()
+                
+                return {"status": "updated", "data": {"clerk_id": existing_user.clerk_id}}
+            else:
+                # Create in main table (Auto-approved)
+                insert_data = user.model_dump()
+                if local_instance:
+                    insert_data["organization"] = local_instance.org_name
+                    insert_data["org_id"] = local_instance.org_id
+                    if user.email and str(local_instance.admin_email or "").strip().lower() == user.email.strip().lower():
+                        insert_data["role"] = "admin"
+                        insert_data["is_verified"] = True
+                        insert_data["approval_status"] = "approved"
+                
+                if not insert_data.get("role"): insert_data["role"] = "viewer"
+                insert_data["approval_status"] = "approved"
+                insert_data["is_verified"] = True
+                
+                new_user = UserDB(**insert_data)
+                db.add(new_user)
+                db.commit()
+                db.refresh(new_user)
+                
+                return {"status": "created", "data": {"clerk_id": new_user.clerk_id}}
         else:
-            # Handle pending table - check if already exists by clerk_id OR email
-            existing_pending = supabase.table("pending_users").select("clerk_id").eq("clerk_id", user.clerk_id).execute()
-            if not existing_pending.data and user.email:
-                existing_pending = supabase.table("pending_users").select("clerk_id").eq("email", user.email).execute()
+            # Handle pending table
+            existing_pending = db.query(PendingUserDB).filter(
+                (PendingUserDB.clerk_id == user.clerk_id) | (PendingUserDB.email == user.email)
+            ).first()
             
-            if existing_pending.data:
-                target_pid = existing_pending.data[0]["clerk_id"]
-                response = supabase.table("pending_users").update(user_data).eq("clerk_id", target_pid).execute()
-                return {"status": "pending_updated", "data": response.data}
+            if existing_pending:
+                for key, value in user_data.items():
+                    setattr(existing_pending, key, value)
+                db.commit()
+                return {"status": "pending_updated", "data": {"clerk_id": existing_pending.clerk_id}}
             
             # New pending user
             insert_data = user.model_dump()
             if local_instance:
-                insert_data["organization"] = local_instance["org_name"]
-                insert_data["org_id"] = local_instance["org_id"]
+                insert_data["organization"] = local_instance.org_name
+                insert_data["org_id"] = local_instance.org_id
             
             if not insert_data.get("role"): insert_data["role"] = "viewer"
             insert_data["approval_status"] = "pending"
             insert_data["is_verified"] = False
             
-            data = supabase.table("pending_users").insert(insert_data).execute()
-            return {"status": "pending_created", "data": data.data}
+            new_pending = PendingUserDB(**insert_data)
+            db.add(new_pending)
+            db.commit()
+            
+            return {"status": "pending_created", "data": {"clerk_id": new_pending.clerk_id}}
             
     except Exception as e:
         print(f"Error in POST /users: {e}")
@@ -547,36 +538,57 @@ def create_or_update_user(user: UserCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/users/{clerk_id}")
-def get_user(clerk_id: str):
+def get_user(clerk_id: str, db: Session = Depends(get_db)):
     try:
         # Check main users table first
-        response = supabase.table("users").select("*").eq("clerk_id", clerk_id).execute()
-        if response.data:
-            return response.data[0]
+        user = db.query(UserDB).filter(UserDB.clerk_id == clerk_id).first()
+        if user:
+            # Convert to dict manually for JSON serialization
+            user_dict = {c.name: getattr(user, c.name) for c in user.__table__.columns}
+            for k, v in user_dict.items():
+                if isinstance(v, datetime): user_dict[k] = v.isoformat()
+            return user_dict
             
         # Then check pending table
-        pending_response = supabase.table("pending_users").select("*").eq("clerk_id", clerk_id).execute()
-        if pending_response.data:
-            return pending_response.data[0]
+        pending_user = db.query(PendingUserDB).filter(PendingUserDB.clerk_id == clerk_id).first()
+        if pending_user:
+            user_dict = {c.name: getattr(pending_user, c.name) for c in pending_user.__table__.columns}
+            for k, v in user_dict.items():
+                if isinstance(v, datetime): user_dict[k] = v.isoformat()
+            return user_dict
             
         raise HTTPException(status_code=404, detail="User not found")
     except HTTPException as he:
         raise he
     except Exception as e:
+        print(f"Error fetching user: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/users")
-def get_all_users(requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
+def get_all_users(db: Session = Depends(get_db), requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     if not requester_id:
         raise HTTPException(status_code=401, detail="Missing user ID header")
 
     try:
-        # Fetch from both tables
-        users_res = supabase.table("users").select("clerk_id, first_name, last_name, email, image_url, role, approval_status, created_at, is_verified, organization, org_id").execute()
-        pending_res = supabase.table("pending_users").select("clerk_id, first_name, last_name, email, image_url, role, approval_status, created_at, is_verified, organization, org_id").execute()
+        # Fetch from both tables using SQLAlchemy
+        main_users_query = db.query(UserDB).all()
+        pending_users_query = db.query(PendingUserDB).all()
         
-        main_users = users_res.data or []
-        pending_users = pending_res.data or []
+        # Convert to dicts and handle datetime serialization
+        main_users = []
+        for u in main_users_query:
+            u_dict = {c.name: getattr(u, c.name) for c in u.__table__.columns}
+            for k, v in u_dict.items():
+                if isinstance(v, datetime): u_dict[k] = v.isoformat()
+            main_users.append(u_dict)
+            
+        pending_users = []
+        for u in pending_users_query:
+            u_dict = {c.name: getattr(u, c.name) for c in u.__table__.columns}
+            for k, v in u_dict.items():
+                if isinstance(v, datetime): u_dict[k] = v.isoformat()
+            pending_users.append(u_dict)
         
         # Deduplicate by email: If a user exists in main_users, ignore them in pending_users
         approved_emails = {u.get('email', '').lower() for u in main_users if u.get('email')}
@@ -590,93 +602,102 @@ def get_all_users(requester_id: Optional[str] = Header(None, alias="X-Clerk-User
         return combined_users
     except Exception as e:
         print(f"Error in GET /users: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/users/{target_clerk_id}/role")
-def update_user_role(target_clerk_id: str, role_update: RoleUpdate, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
+def update_user_role(target_clerk_id: str, role_update: RoleUpdate, db: Session = Depends(get_db), requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     if not requester_id:
         raise HTTPException(status_code=401, detail="Missing user ID header")
         
     # Check if requester is admin
-    requester = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
-    if not requester.data or requester.data[0]["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized")
+    requester = db.query(UserDB).filter(UserDB.clerk_id == requester_id).first()
+    if not requester or requester.role != "admin":
+        raise HTTPException(status_code=43, detail="Not authorized")
 
     try:
         # Update main table
-        data = supabase.table("users").update({"role": role_update.role}).eq("clerk_id", target_clerk_id).execute()
-        if not data.data:
-            # Update pending table
-            data = supabase.table("pending_users").update({"role": role_update.role}).eq("clerk_id", target_clerk_id).execute()
+        user = db.query(UserDB).filter(UserDB.clerk_id == target_clerk_id).first()
+        if user:
+            user.role = role_update.role
+            db.commit()
+            return {"status": "updated", "data": [{"clerk_id": user.clerk_id}]}
             
-        return {"status": "updated", "data": data.data}
+        # Update pending table
+        pending_user = db.query(PendingUserDB).filter(PendingUserDB.clerk_id == target_clerk_id).first()
+        if pending_user:
+            pending_user.role = role_update.role
+            db.commit()
+            return {"status": "updated", "data": [{"clerk_id": pending_user.clerk_id}]}
+            
+        raise HTTPException(status_code=404, detail="User not found")
+    except HTTPException as he:
+        raise he
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/users/{target_clerk_id}/status")
-def update_user_status(target_clerk_id: str, status_update: StatusUpdate, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
+def update_user_status(target_clerk_id: str, status_update: StatusUpdate, db: Session = Depends(get_db), requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     if not requester_id:
         raise HTTPException(status_code=401, detail="Missing user ID header")
         
-    requester = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
-    if not requester.data or requester.data[0]["role"] != "admin":
+    requester = db.query(UserDB).filter(UserDB.clerk_id == requester_id).first()
+    if not requester or requester.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
     try:
-        update_data = {"approval_status": status_update.status}
-        
+        # 1. Handle Approval/Promotion Logic
         if status_update.status == "approved":
-            update_data["role"] = "editor"
-            update_data["is_verified"] = True
-            
-            instance_res = supabase.table("instance_settings").select("org_id, org_name").limit(1).execute()
-            if instance_res.data:
-                instance = instance_res.data[0]
-                update_data["organization"] = instance["org_name"]
-                update_data["org_id"] = instance["org_id"]
-            else:
-                admin_data = supabase.table("users").select("role, organization, org_id").eq("clerk_id", requester_id).execute()
-                if admin_data.data:
-                    record = admin_data.data[0]
-                    if record.get("organization"): update_data["organization"] = record["organization"]
-                    if record.get("org_id"): update_data["org_id"] = record["org_id"]
-
-            # MOVE USER from pending_users to users if they are currently in pending
-            pending_res = supabase.table("pending_users").select("*").eq("clerk_id", target_clerk_id).execute()
-            if pending_res.data:
-                user_record = pending_res.data[0]
-                # Merge current record with update_data
-                for k, v in update_data.items():
-                    user_record[k] = v
+            # Find in pending
+            pending_user = db.query(PendingUserDB).filter(PendingUserDB.clerk_id == target_clerk_id).first()
+            if pending_user:
+                # Get instance settings for org data
+                local_instance = db.query(InstanceSettingsDB).first()
                 
-                # Delete id to avoid conflicts
-                if "id" in user_record: del user_record["id"]
+                # Create main user record
+                user_data = {c.name: getattr(pending_user, c.name) for c in pending_user.__table__.columns if c.name != 'id'}
+                user_data["role"] = "editor" # Default role on approval
+                user_data["approval_status"] = "approved"
+                user_data["is_verified"] = True
                 
-                # Insert into main table
-                data = supabase.table("users").insert(user_record).execute()
-                # Delete from pending table
-                supabase.table("pending_users").delete().eq("clerk_id", target_clerk_id).execute()
-                return {"status": "approved_and_moved", "data": data.data}
+                if local_instance:
+                    user_data["organization"] = local_instance.org_name
+                    user_data["org_id"] = local_instance.org_id
+                
+                new_user = UserDB(**user_data)
+                db.add(new_user)
+                db.delete(pending_user)
+                db.commit()
+                return {"status": "approved_and_moved", "data": [{"clerk_id": target_clerk_id}]}
 
-        # If already in users or just updating status without moving from pending
-        data = supabase.table("users").update(update_data).eq("clerk_id", target_clerk_id).execute()
-        
-        # If not found in users, update in pending
-        if not data.data:
-            data = supabase.table("pending_users").update(update_data).eq("clerk_id", target_clerk_id).execute()
+        # 2. General update for existing users
+        user = db.query(UserDB).filter(UserDB.clerk_id == target_clerk_id).first()
+        if user:
+            user.approval_status = status_update.status
+            db.commit()
+            return {"status": "updated", "data": [{"clerk_id": target_clerk_id}]}
             
-        return {"status": "updated", "data": data.data}
+        # 3. Update pending user status if not approved
+        pending_user = db.query(PendingUserDB).filter(PendingUserDB.clerk_id == target_clerk_id).first()
+        if pending_user:
+            pending_user.approval_status = status_update.status
+            db.commit()
+            return {"status": "updated", "data": [{"clerk_id": target_clerk_id}]}
+            
+        raise HTTPException(status_code=404, detail="User not found")
     except Exception as e:
         print(f"Error updating status: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/users/{target_clerk_id}")
-def delete_user(target_clerk_id: str, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
+def delete_user(target_clerk_id: str, db: Session = Depends(get_db), requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     if not requester_id:
         raise HTTPException(status_code=401, detail="Missing user ID header")
         
-    requester = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
-    if not requester.data or requester.data[0]["role"] != "admin":
+    requester = db.query(UserDB).filter(UserDB.clerk_id == requester_id).first()
+    if not requester or requester.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
     if target_clerk_id == requester_id:
@@ -684,15 +705,24 @@ def delete_user(target_clerk_id: str, requester_id: Optional[str] = Header(None,
 
     try:
         # Try both tables
-        data_users = supabase.table("users").delete().eq("clerk_id", target_clerk_id).execute()
-        data_pending = supabase.table("pending_users").delete().eq("clerk_id", target_clerk_id).execute()
-        
-        return {"status": "deleted", "users_cleared": len(data_users.data or []) + len(data_pending.data or [])}
+        deleted_count = 0
+        user = db.query(UserDB).filter(UserDB.clerk_id == target_clerk_id).first()
+        if user:
+            db.delete(user)
+            deleted_count += 1
+            
+        pending_user = db.query(PendingUserDB).filter(PendingUserDB.clerk_id == target_clerk_id).first()
+        if pending_user:
+            db.delete(pending_user)
+            deleted_count += 1
+            
+        db.commit()
+        return {"status": "deleted", "users_cleared": deleted_count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/verify-license")
-def verify_license(verify: LicenseVerify):
+def verify_license(verify: LicenseVerify, db: Session = Depends(get_db)):
     try:
         # 1. Search for organization in ADMIN database
         org_res = admin_supabase.table("organizations").select("*").ilike("name", verify.org_name).eq("admin_email", verify.email_id).execute()
@@ -717,19 +747,18 @@ def verify_license(verify: LicenseVerify):
         if not lic_res.data:
             raise HTTPException(status_code=403, detail="Invalid License ID for this organization.")
 
-        # 4. Success - Update the user in the MAIN database
-        now = datetime.now().isoformat()
+        # 4. Success - Update settings and user in the LOCAL database
+        now = datetime.now()
         
         # 4.5 Notify Pluto Admin about this activation
         try:
             admin_supabase.table("organizations").update({
                 "status": "active",
-                "activated_at": now,
+                "activated_at": now.isoformat(),
                 "server_id": verify.server_id,
                 "app_version": verify.app_version or "1.0.0"
             }).eq("id", org_id).execute()
 
-            # Create a log entry in Pluto Admin
             admin_supabase.table("admin_logs").insert({
                 "action": "REMOTE_ACTIVATION",
                 "details": f"Instance activated remotely for organization {org_name_actual}. Server: {verify.server_id}, Version: {verify.app_version}",
@@ -739,49 +768,58 @@ def verify_license(verify: LicenseVerify):
         except Exception as admin_err:
             print(f"Warning: Could not notify Pluto Admin of activation: {admin_err}")
 
-        # 5. Lock this instance to the organization
-        # We use upscale or delete-then-insert to ensure we only have ONE instance record
+        # 5. Lock this instance to the organization in LOCAL DB
         try:
-            # Delete any existing settings to ensure clean activation
-            supabase.table("instance_settings").delete().neq("id", -1).execute()
+            db.query(InstanceSettingsDB).delete() # Single tenant model: clear old settings
             
-            supabase.table("instance_settings").insert({
-                "org_id": str(org_id),
-                "org_name": org_name_actual,
-                "org_code": org_code or verify.org_code, # Prefer official code from Admin DB
-                "plan": org_plan,
-                "status": org_status,
-                "license_key": verify.license_id,
-                "app_version": verify.app_version or "1.0.0",
-                "server_id": verify.server_id,
-                "admin_email": verify.email_id,
-                "activated_at": now
-            }).execute()
+            new_settings = InstanceSettingsDB(
+                org_id=str(org_id),
+                org_name=org_name_actual,
+                org_code=org_code or verify.org_code,
+                plan=org_plan,
+                status=org_status,
+                license_key=verify.license_id,
+                app_version=verify.app_version or "1.0.0",
+                server_id=verify.server_id,
+                admin_email=verify.email_id,
+                activated_at=now
+            )
+            db.add(new_settings)
             
-            # Immediately update the local cache so the middleware knows we are ACTIVE
+            # Immediately update the local cache
             global INSTANCE_STATUS_CACHE
             INSTANCE_STATUS_CACHE["is_suspended"] = str(org_status).lower() != "active"
             INSTANCE_STATUS_CACHE["org_name"] = org_name_actual
-            INSTANCE_STATUS_CACHE["last_check"] = datetime.now()
+            INSTANCE_STATUS_CACHE["last_check"] = now
+            
+            # Update the user
+            user = db.query(UserDB).filter(UserDB.clerk_id == verify.clerk_id).first()
+            if user:
+                user.is_verified = True
+                user.verified_at = now
+                user.organization = org_name_actual
+                user.org_id = str(org_id)
+                user.approval_status = "approved"
+                user.role = "admin"
+            
+            db.commit()
             print(f"✅ Instance Activated and Locked to {org_name_actual} (ID: {org_id})")
         except Exception as lock_err:
             print(f"Error locking instance settings: {lock_err}")
-
-        # Ensure we use 'supabase' for the main project update and 'admin_supabase' for the license check
-        update_res = supabase.table("users").update({
-            "is_verified": True,
-            "verified_at": now,
-            "organization": org_name_actual,
-            "org_id": str(org_id), # Store the actual ID from Admin DB
-            "approval_status": "approved",
-            "role": "admin"
-        }).eq("clerk_id", verify.clerk_id).execute()
+            db.rollback()
 
         return {
             "status": "verified",
             "message": f"Successfully verified license for {org_name_actual}",
-            "data": update_res.data
+            "data": [{"clerk_id": verify.clerk_id}]
         }
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Verification Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
     except HTTPException as he:
         raise he
@@ -798,329 +836,310 @@ def get_process_table(p_type: str):
     return "processes"
 
 @app.post("/processes")
-def create_process(process: ProcessPackageCreate):
+def create_process(process: ProcessPackageCreate, db: Session = Depends(get_db)):
     try:
         # Store the sheets as JSONB
-        data = {
-            "user_id": process.user_id,
-            "org_id": str(process.org_id) if process.org_id is not None else None,
-            "name": process.name,
-            "sheets": [sheet.model_dump() for sheet in process.sheets],
-            "status": process.status,
-            "type": process.type,
-            "updated_at": datetime.now().isoformat()
-        }
+        new_process = ProcessDB(
+            user_id=process.user_id,
+            org_id=str(process.org_id) if process.org_id is not None else None,
+            name=process.name,
+            sheets=[sheet.model_dump() for sheet in process.sheets],
+            status=process.status,
+            type=process.type,
+            updated_at=datetime.now()
+        )
         
-        table_name = get_process_table(process.type)
-        response = supabase.table(table_name).insert(data).execute()
+        db.add(new_process)
+        db.commit()
+        db.refresh(new_process)
         
         # Auto-create a version if published
-        if process.status == 'published' and response.data:
-            p_id = response.data[0]["id"]
+        if process.status == 'published':
             new_version = {
                 "name": process.version_name or f"Published Version - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-                "sheets": data["sheets"],
+                "sheets": new_process.sheets,
                 "comments": process.version_comments or "Automatically created on publish",
                 "created_at": datetime.now().isoformat()
             }
-            supabase.table(table_name).update({"versions": [new_version]}).eq("id", p_id).execute()
+            new_process.versions = [new_version]
+            db.commit()
 
-        return {"status": "created", "data": response.data}
+        return {"status": "created", "data": [{"id": new_process.id}]}
     except Exception as e:
         print(f"Error creating process: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/processes/{process_id}")
-def update_process(process_id: int, process: ProcessPackageCreate, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
+def update_process(process_id: int, process: ProcessPackageCreate, db: Session = Depends(get_db), requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     try:
         print(f"[PROCESS] Updating process {process_id}. Type: {process.type}, Status: {process.status}, Requester: {requester_id}")
         
-        table_name = get_process_table(process.type)
-        
-        # Check ownership if requester_id is provided
-        if requester_id:
-             p_res = supabase.table(table_name).select("user_id").eq("id", process_id).execute()
+        # 1. Fetch Process
+        db_process = db.query(ProcessDB).filter(ProcessDB.id == process_id).first()
+        if not db_process:
+             raise HTTPException(status_code=404, detail="Process not found")
              
-             # Fallback to legacy table if not found
-             if not p_res.data and table_name != "processes":
-                  p_res = supabase.table("processes").select("user_id").eq("id", process_id).execute()
-                  if p_res.data:
-                      table_name = "processes"
-                      
-             if p_res.data:
-                 owner_id = p_res.data[0]["user_id"]
-                 if owner_id != requester_id:
-                     # Check if admin
-                     user = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
-                     if not user.data or user.data[0]["role"] != "admin":
-                         print(f"[PROCESS] Unauthorized update attempt by {requester_id}")
-                         raise HTTPException(status_code=403, detail="Not authorized to update this process")
+        # 2. Check Ownership
+        if requester_id:
+             if db_process.user_id != requester_id:
+                  # Check if admin
+                  user = db.query(UserDB).filter(UserDB.clerk_id == requester_id).first()
+                  if not user or user.role != "admin":
+                       print(f"[PROCESS] Unauthorized update attempt by {requester_id}")
+                       raise HTTPException(status_code=403, detail="Not authorized to update this process")
 
-        data = {
-            "name": process.name,
-            "sheets": [sheet.model_dump() for sheet in process.sheets],
-            "updated_at": datetime.now().isoformat(),
-            "status": process.status,
-            "type": process.type,
-            "org_id": str(process.org_id) if process.org_id is not None else None
-        }
+        # 3. Update data
+        db_process.name = process.name
+        db_process.sheets = [sheet.model_dump() for sheet in process.sheets]
+        db_process.status = process.status
+        db_process.type = process.type
+        db_process.org_id = str(process.org_id) if process.org_id is not None else None
+        db_process.updated_at = datetime.now()
         
-        response = supabase.table(table_name).update(data).eq("id", process_id).execute()
-        
-        if not response.data:
-            print(f"[PROCESS] Update failed for id {process_id}")
-            raise HTTPException(status_code=404, detail="Process not found or update failed")
-
+        # 4. Handle Versions
         if process.status == 'published':
-            current = supabase.table(table_name).select("versions").eq("id", process_id).execute()
-            versions = current.data[0].get("versions", []) if (current.data and current.data[0].get("versions")) else []
-            
+            versions = list(db_process.versions) if db_process.versions else []
             new_version = {
-                "name": process.version_name or f"Published - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-                "sheets": data["sheets"],
-                "created_at": datetime.now().isoformat(),
-                "comments": process.version_comments or "User published changes"
+                "name": process.version_name or f"Version {len(versions) + 1} - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                "sheets": db_process.sheets,
+                "comments": process.version_comments or "Manual update publish",
+                "created_at": datetime.now().isoformat()
             }
-            if len(versions) > 20: 
-                versions = versions[-20:]
             versions.append(new_version)
-            
-            supabase.table(table_name).update({"versions": versions}).eq("id", process_id).execute()
+            db_process.versions = versions
 
-        return {"status": "updated", "data": response.data}
+        db.commit()
+        return {"status": "updated", "data": [{"id": db_process.id}]}
     except HTTPException as he:
-        print(f"HTTP Exception updating process {process_id}: {he.detail}")
         raise he
     except Exception as e:
-        print(f"Error updating process {process_id}: {e}")
+        print(f"Error updating process: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/processes/{user_id}")
-def get_processes(user_id: str):
+def get_processes(user_id: str, db: Session = Depends(get_db)):
     try:
         print(f"Fetching processes for user: {user_id}")
-        tables = ["processes", "table_processes", "freestyle_processes"]
-        all_data = []
-        for table in tables:
-            res = supabase.table(table).select("*").eq("user_id", user_id).execute()
-            if res.data:
-                # Assign type based on table
-                for item in res.data:
-                    if table == "table_processes":
-                        item["type"] = "table"
-                    elif table == "freestyle_processes":
-                        item["type"] = "freestyle"
-                    elif table == "processes":
-                        # Default to freestyle for legacy 'processes' table if type not present
-                        if "type" not in item:
-                            item["type"] = "freestyle"
-                all_data.extend(res.data)
+        # Fetch all processes for user, regardless of type as they are all in one table now
+        processes = db.query(ProcessDB).filter(ProcessDB.user_id == user_id).all()
         
         # Optimize payload: Remove heavy 'sheets' data
         cleaned_data = []
-        for process in all_data:
-            p = process.copy()
-            p.pop("sheets", None)
+        for p in processes:
+            # Convert SQLAlchemy object to dict
+            p_dict = {c.name: getattr(p, c.name) for c in p.__table__.columns}
             
-            # Clean versions
-            if "versions" in p and isinstance(p["versions"], list):
-                for v in p["versions"]:
+            # Remove heavy sheets data
+            p_dict.pop("sheets", None)
+            
+            # Clean versions (remove sheets from within versions too)
+            versions = p_dict.get("versions", [])
+            if isinstance(versions, list):
+                for v in versions:
                     if isinstance(v, dict):
                         v.pop("sheets", None)
-            cleaned_data.append(p)
+            
+            # Handle datetime serialization
+            for k, v in p_dict.items():
+                if isinstance(v, datetime):
+                    p_dict[k] = v.isoformat()
+                    
+            cleaned_data.append(p_dict)
         
-        # Sort by updated_at or created_at
+        # Sort by updated_at or created_at descending
         cleaned_data.sort(key=lambda x: x.get("updated_at", x.get("created_at")), reverse=True)
             
         return cleaned_data
     except Exception as e:
         print(f"Error fetching processes: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/process/{process_id}")
-def get_process(process_id: int):
+def get_process(process_id: int, db: Session = Depends(get_db)):
     try:
         print(f"Fetching process {process_id}...")
-        tables = ["processes", "table_processes", "freestyle_processes"]
-        for table in tables:
-            response = supabase.table(table).select("*").eq("id", process_id).execute()
-            if response.data:
-                print(f"Successfully fetched process {process_id} from {table}")
-                return response.data[0]
+        p = db.query(ProcessDB).filter(ProcessDB.id == process_id).first()
+        if p:
+            # Convert to dict and handle datetimes
+            p_dict = {c.name: getattr(p, c.name) for c in p.__table__.columns}
+            for k, v in p_dict.items():
+                if isinstance(v, datetime):
+                    p_dict[k] = v.isoformat()
+            return p_dict
                 
         raise HTTPException(status_code=404, detail="Process not found")
     except Exception as e:
         print(f"Error fetching process {process_id}: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/processes/{process_id}/rename")
-def rename_process(process_id: int, rename: ProcessRename, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
+def rename_process(process_id: int, rename: ProcessRename, db: Session = Depends(get_db), requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     try:
-        tables = ["processes", "table_processes", "freestyle_processes"]
-        target_table = None
-        for table in tables:
-             process = supabase.table(table).select("user_id").eq("id", process_id).execute()
-             if process.data:
-                 target_table = table
-                 owner_id = process.data[0]["user_id"]
-                 if requester_id and owner_id != requester_id:
-                     # Check if admin
-                     user = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
-                     if not user.data or user.data[0]["role"] != "admin":
-                         raise HTTPException(status_code=403, detail="Not authorized to rename this process")
-                 break
-        
-        if not target_table:
+        p = db.query(ProcessDB).filter(ProcessDB.id == process_id).first()
+        if not p:
             raise HTTPException(status_code=404, detail="Process not found")
 
-        data = supabase.table(target_table).update({"name": rename.name}).eq("id", process_id).execute()
-        return {"status": "updated", "data": data.data}
+        # Check Ownership
+        if requester_id:
+             if p.user_id != requester_id:
+                  # Check if admin
+                  user = db.query(UserDB).filter(UserDB.clerk_id == requester_id).first()
+                  if not user or user.role != "admin":
+                       print(f"[PROCESS] Unauthorized rename attempt by {requester_id}")
+                       raise HTTPException(status_code=403, detail="Not authorized to rename this process")
+
+        p.name = rename.name
+        p.updated_at = datetime.now()
+        db.commit()
+        return {"status": "updated", "data": [{"id": p.id, "name": p.name}]}
     except HTTPException as he:
         raise he
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/processes/{process_id}/versions")
-def save_process_version(process_id: int, version: ProcessVersionCreate, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
+def save_process_version(process_id: int, version: ProcessVersionCreate, db: Session = Depends(get_db), requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     try:
-        tables = ["processes", "table_processes", "freestyle_processes"]
-        target_table = None
-        current_versions = []
-        for table in tables:
-             p_res = supabase.table(table).select("user_id, versions").eq("id", process_id).execute()
-             if p_res.data:
-                 target_table = table
-                 owner_id = p_res.data[0]["user_id"]
-                 current_versions = p_res.data[0].get("versions", []) or []
-                 if requester_id and owner_id != requester_id:
-                     # Check if admin
-                     user = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
-                     if not user.data or user.data[0]["role"] != "admin":
-                         raise HTTPException(status_code=403, detail="Not authorized to save version for this process")
-                 break
-        
-        if not target_table:
+        p = db.query(ProcessDB).filter(ProcessDB.id == process_id).first()
+        if not p:
             raise HTTPException(status_code=404, detail="Process not found")
-        
+            
+        # Check Ownership
+        if requester_id:
+             if p.user_id != requester_id:
+                  # Check if admin
+                  user = db.query(UserDB).filter(UserDB.clerk_id == requester_id).first()
+                  if not user or user.role != "admin":
+                       print(f"[PROCESS] Unauthorized version save attempt by {requester_id}")
+                       raise HTTPException(status_code=403, detail="Not authorized to save version for this process")
+
         # 2. Append new version
+        versions = list(p.versions) if p.versions else []
         new_version = {
             "name": version.name,
             "sheets": [sheet.model_dump() for sheet in version.sheets],
             "comments": version.comments,
             "created_at": datetime.now().isoformat()
         }
-        current_versions.append(new_version)
+        versions.append(new_version)
+        p.versions = versions
+        p.updated_at = datetime.now()
         
-        # 3. Update
-        data = supabase.table(target_table).update({"versions": current_versions}).eq("id", process_id).execute()
-        return {"status": "version_saved", "data": data.data}
+        db.commit()
+        return {"status": "version_saved", "data": [{"id": p.id}]}
     except HTTPException as he:
         raise he
     except Exception as e:
         print(f"Error saving version: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/processes/{process_id}")
-def delete_process(process_id: int, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
+def delete_process(process_id: int, db: Session = Depends(get_db), requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     try:
-        tables = ["processes", "table_processes", "freestyle_processes"]
-        target_table = None
-        for table in tables:
-             process = supabase.table(table).select("user_id").eq("id", process_id).execute()
-             if process.data:
-                 target_table = table
-                 owner_id = process.data[0]["user_id"]
-                 if requester_id and owner_id != requester_id:
-                     # Check if admin
-                     user = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
-                     if not user.data or user.data[0]["role"] != "admin":
-                         raise HTTPException(status_code=403, detail="Not authorized to delete this process")
-                 break
-        
-        if not target_table:
+        p = db.query(ProcessDB).filter(ProcessDB.id == process_id).first()
+        if not p:
             raise HTTPException(status_code=404, detail="Process not found")
 
-        response = supabase.table(target_table).delete().eq("id", process_id).execute()
-        return {"status": "deleted", "data": response.data}
+        # Check Ownership
+        if requester_id:
+             if p.user_id != requester_id:
+                  # Check if admin
+                  user = db.query(UserDB).filter(UserDB.clerk_id == requester_id).first()
+                  if not user or user.role != "admin":
+                       print(f"[PROCESS] Unauthorized delete attempt by {requester_id}")
+                       raise HTTPException(status_code=403, detail="Not authorized to delete this process")
+
+        db.delete(p)
+        db.commit()
+        return {"status": "deleted", "data": [{"id": process_id}]}
     except HTTPException as he:
         raise he
     except Exception as e:
         print(f"Error deleting process: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/projects")
-def create_project(project: ProjectCreate):
+def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
     try:
-        # 1. Fetch the process to get the version data from any of the tables
-        tables = ["table_processes", "freestyle_processes", "processes"]
-        process_data = None
-        for table in tables:
-             res = supabase.table(table).select("versions").eq("id", project.process_id).execute()
-             if res.data:
-                 process_data = res.data[0]
-                 break
-                 
-        if not process_data:
+        # 1. Fetch the process to get the version data
+        process = db.query(ProcessDB).filter(ProcessDB.id == project.process_id).first()
+        if not process:
             raise HTTPException(status_code=404, detail="Process template not found")
         
-        versions = process_data.get("versions", []) or []
+        versions = process.versions or []
         selected_version = next((v for v in versions if v["name"] == project.version_name), None)
         
         if not selected_version:
             raise HTTPException(status_code=404, detail="Version not found")
             
         # 2. Create the project with the COPIED sheets
-        data = {
-            "user_id": project.user_id,
-            "name": project.name,
-            "process_id": project.process_id,
-            "version_name": project.version_name,
-            "sheets": selected_version["sheets"], # Copy the sheets
-            "type": project.type
-        }
+        new_project = ProjectDB(
+            user_id=project.user_id,
+            name=project.name,
+            process_id=project.process_id,
+            version_name=project.version_name,
+            sheets=selected_version["sheets"], # Copy the sheets
+            type=project.type,
+            org_id=project.org_id,
+            updated_at=datetime.now()
+        )
         
-        response = supabase.table("projects").insert(data).execute()
-        return {"status": "created", "data": response.data}
+        db.add(new_project)
+        db.commit()
+        db.refresh(new_project)
+        return {"status": "created", "data": [{"id": new_project.id}]}
     except Exception as e:
         print(f"Error creating project: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/projects/{user_id}")
-def get_projects(user_id: str):
+def get_projects(user_id: str, db: Session = Depends(get_db)):
     try:
-        import json
-        # Optimize: Fetch owned and shared projects in a single query using OR
-        # This reduces database round trips and latency
-        
-        # Construct the JSON string for the contains filter
-        collaborator_tag = json.dumps([{"user_id": user_id}])
-        
-        # Use the or_ filter: user_id.eq.UID,collaborators.cs.TAG
-        response = supabase.table("projects").select("*").or_(
-            f"user_id.eq.{user_id},collaborators.cs.{collaborator_tag}"
-        ).order("created_at", desc=True).execute()
+        from sqlalchemy import or_, cast, String
+        # Using SQLAlchemy or_ to filter for owned or shared projects
+        projects = db.query(ProjectDB).filter(
+            or_(
+                ProjectDB.user_id == user_id,
+                cast(ProjectDB.collaborators, String).like(f'%{user_id}%')
+            )
+        ).order_by(ProjectDB.created_at.desc()).all()
         
         # Optimize payload: Remove heavy 'sheets' data
         cleaned_data = []
-        for project in response.data:
-            p = project.copy()
-            p.pop("sheets", None)
-            cleaned_data.append(p)
+        for project in projects:
+            p_dict = {c.name: getattr(project, c.name) for c in project.__table__.columns}
+            p_dict.pop("sheets", None)
+            
+            # Handle datetime
+            for k, v in p_dict.items():
+                if isinstance(v, datetime): p_dict[k] = v.isoformat()
+                
+            cleaned_data.append(p_dict)
         
         return cleaned_data
     except Exception as e:
+        print(f"Error fetching projects: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/projects/{project_id}/collaborators")
-def add_collaborator(project_id: int, collaborator: CollaboratorAdd):
+def add_collaborator(project_id: int, collaborator: CollaboratorAdd, db: Session = Depends(get_db)):
     try:
         # Fetch current project
-        project_res = supabase.table("projects").select("collaborators").eq("id", project_id).execute()
-        if not project_res.data:
+        project = db.query(ProjectDB).filter(ProjectDB.id == project_id).first()
+        if not project:
             raise HTTPException(status_code=404, detail="Project not found")
             
-        current_collaborators = project_res.data[0].get("collaborators", [])
+        current_collaborators = list(project.collaborators) if project.collaborators else []
         
         # Check if already exists
         exists = False
@@ -1133,203 +1152,195 @@ def add_collaborator(project_id: int, collaborator: CollaboratorAdd):
         if not exists:
             current_collaborators.append(collaborator.model_dump())
             
-        response = supabase.table("projects").update({"collaborators": current_collaborators}).eq("id", project_id).execute()
-        return {"status": "updated", "data": response.data}
+        project.collaborators = current_collaborators
+        project.updated_at = datetime.now()
+        db.commit()
+        return {"status": "updated", "data": [{"id": project.id}]}
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/projects/{project_id}/collaborators/{user_id}")
-def remove_collaborator(project_id: int, user_id: str):
+def remove_collaborator(project_id: int, user_id: str, db: Session = Depends(get_db)):
     try:
         # Fetch current project
-        project_res = supabase.table("projects").select("collaborators").eq("id", project_id).execute()
-        if not project_res.data:
+        project = db.query(ProjectDB).filter(ProjectDB.id == project_id).first()
+        if not project:
             raise HTTPException(status_code=404, detail="Project not found")
             
-        current_collaborators = project_res.data[0].get("collaborators", [])
+        current_collaborators = list(project.collaborators) if project.collaborators else []
         
         # Remove the collaborator
         updated_collaborators = [c for c in current_collaborators if c.get("user_id") != user_id]
         
-        response = supabase.table("projects").update({"collaborators": updated_collaborators}).eq("id", project_id).execute()
-        return {"status": "removed", "data": response.data}
+        project.collaborators = updated_collaborators
+        project.updated_at = datetime.now()
+        db.commit()
+        return {"status": "removed", "data": [{"id": project.id}]}
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/project/{project_id}")
-def get_project(project_id: int):
+def get_project(project_id: int, db: Session = Depends(get_db)):
     try:
-        response = supabase.table("projects").select("*").eq("id", project_id).execute()
-        if not response.data:
+        project = db.query(ProjectDB).filter(ProjectDB.id == project_id).first()
+        if not project:
             raise HTTPException(status_code=404, detail="Project not found")
-        return response.data[0]
+            
+        p_dict = {c.name: getattr(project, c.name) for c in project.__table__.columns}
+        for k, v in p_dict.items():
+            if isinstance(v, datetime): p_dict[k] = v.isoformat()
+        return p_dict
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/project/{project_id}/rename")
-def rename_project(project_id: int, rename: ProcessRename):
+def rename_project(project_id: int, rename: ProcessRename, db: Session = Depends(get_db)):
     try:
-        data = supabase.table("projects").update({"name": rename.name}).eq("id", project_id).execute()
-        return {"status": "updated", "data": data.data}
+        project = db.query(ProjectDB).filter(ProjectDB.id == project_id).first()
+        if not project:
+             raise HTTPException(status_code=404, detail="Project not found")
+             
+        project.name = rename.name
+        project.updated_at = datetime.now()
+        db.commit()
+        return {"status": "updated", "data": [{"id": project.id}]}
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-def process_jira_sync(project_id: int, project_name: str, version: str, sheets: list):
+def process_jira_sync(project_id: int, project_name: str, version: str, sheets: list, db_session_factory):
     """Background task to sync project tasks with Jira"""
-    updated_sheets = []
-    has_changes = False
-    
-    # Fetch all users to resolve names in Jira
-    user_map = {}
+    db = db_session_factory()
     try:
-        users_res = supabase.table("users").select("clerk_id, first_name, last_name").execute()
-        for u in users_res.data:
-            name = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
-            user_map[u['clerk_id']] = name or u['clerk_id']
-    except Exception as e:
-        print(f"Error fetching users for Jira sync: {e}")
+        # Fetch all users to resolve names in Jira
+        user_map = {}
+        users = db.query(UserDB).all()
+        for u in users:
+            name = f"{u.first_name or ''} {u.last_name or ''}".strip()
+            user_map[u.clerk_id] = name or u.clerk_id
 
-    # Fetch project details for metadata
-    project_owner = "Unknown"
-    project_status = "N/A"
-    project_type = "freestyle"
-    try:
-        project_res = supabase.table("projects").select("user_id, status, type").eq("id", project_id).execute()
-        if project_res.data:
-            owner_id = project_res.data[0].get("user_id")
-            project_owner = user_map.get(owner_id, owner_id)
-            project_status = project_res.data[0].get("status", "N/A")
-            project_type = project_res.data[0].get("type", "freestyle")
-    except Exception as e:
-        print(f"Error fetching project details for Jira sync: {e}")
-    
-    metadata = {
-        "project_name": project_name,
-        "version": version,
-        "project_owner": project_owner,
-        "project_status": project_status,
-        "project_id": project_id,
-        "project_type": project_type
-    }
-
-    for sheet in sheets:
-        sheet_changed = False
-        nodes = sheet.get("nodes", [])
-        for node in nodes:
-            # Only sync 'activity' or 'process' nodes that have assignments (responsibility or support)
-            node_type = node.get("type")
-            data = node.get("data", {})
-            responsibility = data.get("responsibility", [])
-            support = data.get("support", [])
+        # Fetch project details for metadata
+        project = db.query(ProjectDB).filter(ProjectDB.id == project_id).first()
+        if not project:
+            return
             
-            if (node_type in ["activity", "process"]) and (responsibility or support):
-                # Sync to Jira
-                jira_key = sync_task_to_jira(data, metadata, user_map)
-                if jira_key and data.get("jira_issue_id") != jira_key:
-                    data["jira_issue_id"] = jira_key
-                    sheet_changed = True
-                    has_changes = True
+        project_owner = user_map.get(project.user_id, project.user_id)
         
-        updated_sheets.append(sheet)
+        metadata = {
+            "project_name": project_name,
+            "version": version,
+            "project_owner": project_owner,
+            "project_status": project.status,
+            "project_id": project_id,
+            "project_type": project.type
+        }
 
-    if has_changes:
-        # Update the project back in Supabase with the new Jira keys
-        try:
-            supabase.table("projects").update({"sheets": updated_sheets}).eq("id", project_id).execute()
+        updated_sheets = []
+        has_changes = False
+
+        for sheet in sheets:
+            sheet_changed = False
+            nodes = sheet.get("nodes", [])
+            for node in nodes:
+                node_type = node.get("type")
+                data = node.get("data", {})
+                responsibility = data.get("responsibility", [])
+                support = data.get("support", [])
+                
+                if (node_type in ["activity", "process"]) and (responsibility or support):
+                    jira_key = sync_task_to_jira(data, metadata, user_map)
+                    if jira_key and data.get("jira_issue_id") != jira_key:
+                        data["jira_issue_id"] = jira_key
+                        sheet_changed = True
+                        has_changes = True
+            updated_sheets.append(sheet)
+
+        if has_changes:
+            project.sheets = updated_sheets
+            db.commit()
             print(f"Jira sync complete for project {project_id}")
-        except Exception as e:
-            print(f"Error updating project after Jira sync: {e}")
+    except Exception as e:
+        print(f"Error in Jira sync background task: {e}")
+        traceback.print_exc()
+    finally:
+        db.close()
 
 @app.put("/project/{project_id}")
-def update_project(project_id: int, update: ProjectUpdate, background_tasks: BackgroundTasks):
+def update_project(project_id: int, update: ProjectUpdate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     try:
-        data = {
-            "updated_at": datetime.now().isoformat()
-        }
-        
-        project_name = update.name
-        version_name = update.version_name
-        
-        if not project_name or not version_name:
-            # Fetch missing info
-            proj = supabase.table("projects").select("name", "version_name").eq("id", project_id).execute()
-            if proj.data:
-                if not project_name: project_name = proj.data[0]["name"]
-                if not version_name: version_name = proj.data[0]["version_name"]
+        project = db.query(ProjectDB).filter(ProjectDB.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
 
-        current_status = update.status
-        if not current_status:
-             proj = supabase.table("projects").select("status").eq("id", project_id).execute()
-             if proj.data:
-                 current_status = proj.data[0]["status"]
-
-        if update.sheets is not None and current_status == 'published':
-            data["sheets"] = [sheet.model_dump() for sheet in update.sheets]
-            # Trigger Jira sync in background only for published projects
-            background_tasks.add_task(process_jira_sync, project_id, project_name, version_name, data["sheets"])
-        elif update.sheets is not None:
-             data["sheets"] = [sheet.model_dump() for sheet in update.sheets]
+        if update.sheets is not None:
+            project.sheets = [sheet.model_dump() for sheet in update.sheets]
+            if project.status == 'published':
+                 background_tasks.add_task(process_jira_sync, project_id, project.name, project.version_name, project.sheets, SessionLocal)
             
         if update.name is not None:
-            data["name"] = update.name
+            project.name = update.name
 
         if update.progress is not None:
-            data["progress"] = update.progress
-            
-        if update.version_name is not None:
-            data["version_name"] = update.version_name
-            
-        if update.status is not None:
-            data["status"] = update.status
+            project.progress = update.progress
 
-        if update.type is not None:
-            data["type"] = update.type
+        if update.status is not None:
+            project.status = update.status
+
+        if update.version_name is not None:
+            project.version_name = update.version_name
             
-        response = supabase.table("projects").update(data).eq("id", project_id).execute()
-        return {"status": "updated", "data": response.data}
+        project.updated_at = datetime.now()
+        db.commit()
+        return {"status": "updated", "data": [{"id": project_id}]}
     except Exception as e:
         print(f"Error updating project: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/projects")
-def get_all_projects(requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
+def get_all_projects(db: Session = Depends(get_db), requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     if not requester_id:
         raise HTTPException(status_code=401, detail="Missing user ID header")
         
     # Check if requester is admin
-    requester = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
-    if not requester.data or requester.data[0]["role"] != "admin":
+    requester = db.query(UserDB).filter(UserDB.clerk_id == requester_id).first()
+    if not requester or requester.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
     try:
-        response = supabase.table("projects").select("*").order("created_at", desc=True).execute()
+        projects = db.query(ProjectDB).order_by(ProjectDB.created_at.desc()).all()
         
         # Optimize payload: Remove heavy 'sheets' data
         cleaned_data = []
-        for project in response.data:
-            p = project.copy()
-            p.pop("sheets", None)
-            cleaned_data.append(p)
-            
+        for project in projects:
+            p_dict = {c.name: getattr(project, c.name) for c in project.__table__.columns}
+            p_dict.pop("sheets", None)
+            for k, v in p_dict.items():
+                if isinstance(v, datetime): p_dict[k] = v.isoformat()
+            cleaned_data.append(p_dict)
         return cleaned_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/calendar/events/{user_id}")
-def get_calendar_events(user_id: str):
+def get_calendar_events(user_id: str, db: Session = Depends(get_db)):
     try:
-        import json
+        from sqlalchemy import or_
         # Fetch all projects where the user is either the owner or a collaborator
-        collaborator_tag = json.dumps([{"user_id": user_id}])
-        response = supabase.table("projects").select("id, name, sheets").or_(
-            f"user_id.eq.{user_id},collaborators.cs.{collaborator_tag}"
-        ).execute()
+        projects = db.query(ProjectDB).filter(
+            or_(
+                ProjectDB.user_id == user_id,
+                ProjectDB.collaborators.contains([{"user_id": user_id}])
+            )
+        ).all()
 
         events = []
-        for project in response.data:
-            if not project.get('sheets'):
+        for project in projects:
+            if not project.sheets:
                 continue
-            for sheet in project['sheets']:
+            for sheet in project.sheets:
                 if not sheet.get('nodes'):
                     continue
                 for node in sheet['nodes']:
@@ -1342,50 +1353,53 @@ def get_calendar_events(user_id: str):
                     if user_id in responsibility or user_id in support:
                         if node_data.get('deadline'):
                             events.append({
-                                "id": f"{project['id']}-{node['id']}",
+                                "id": f"{project.id}-{node['id']}",
                                 "title": node_data.get('label', 'Untitled Task'),
-                                "project_name": project['name'],
+                                "project_name": project.name,
                                 "date": node_data['deadline'],
-                                "type": "task", # All deadlines are considered tasks for now
-                                "route": f"/dashboard/process/create?projectId={project['id']}"
+                                "type": "task",
+                                "route": f"/dashboard/process/create?projectId={project.id}"
                             })
         return events
     except Exception as e:
         print(f"Error fetching calendar events: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/projects/{project_id}")
-def delete_project(project_id: int, requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
+def delete_project(project_id: int, db: Session = Depends(get_db), requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
     try:
-        # Check ownership if requester_id is provided
-        if requester_id:
-             project = supabase.table("projects").select("user_id").eq("id", project_id).execute()
-             if project.data:
-                 owner_id = project.data[0]["user_id"]
-                 if owner_id != requester_id:
-                     # Check if admin
-                     user = supabase.table("users").select("role").eq("clerk_id", requester_id).execute()
-                     if not user.data or user.data[0]["role"] != "admin":
-                         raise HTTPException(status_code=403, detail="Not authorized to delete this project")
+        project = db.query(ProjectDB).filter(ProjectDB.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
 
-        response = supabase.table("projects").delete().eq("id", project_id).execute()
-        return {"status": "deleted", "data": response.data}
+        # Check ownership
+        if requester_id:
+            if project.user_id != requester_id:
+                # Check if admin
+                user = db.query(UserDB).filter(UserDB.clerk_id == requester_id).first()
+                if not user or user.role != "admin":
+                    raise HTTPException(status_code=403, detail="Not authorized to delete this project")
+
+        db.delete(project)
+        db.commit()
+        return {"status": "deleted", "data": [{"id": project_id}]}
     except HTTPException as he:
         raise he
     except Exception as e:
         print(f"Error deleting project: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/jira/connection-trigger")
-def trigger_connection_jira(trigger: ConnectionJiraTrigger):
+def trigger_connection_jira(trigger: ConnectionJiraTrigger, db: Session = Depends(get_db)):
     try:
         # Fetch users to resolve names
-        user_response = supabase.table("users").select("clerk_id", "first_name", "last_name").execute()
+        user_records = db.query(UserDB).all()
         user_map = {}
-        if user_response.data:
-            for u in user_response.data:
-                name = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
-                user_map[u["clerk_id"]] = name or u["clerk_id"]
+        for u in user_records:
+            name = f"{u.first_name or ''} {u.last_name or ''}".strip()
+            user_map[u.clerk_id] = name or u.clerk_id
 
         jira_key = create_connection_jira_ticket(
             trigger.activity_data, 

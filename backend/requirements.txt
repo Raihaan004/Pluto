@@ -6,3 +6,6 @@ pydantic
 jira
 requests
 psutil
+sqlalchemy
+psycopg2-binary
+databases

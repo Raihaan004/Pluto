@@ -26,8 +26,12 @@ export const ProcessSidebar = ({
   isReadOnly = false,
   showActions = true
 }: ProcessSidebarProps) => {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(!isReadOnly);
   const { edgeStyle, setEdgeStyle } = useProcessContext();
+
+  React.useEffect(() => {
+    setIsOpen(!isReadOnly);
+  }, [isReadOnly]);
 
   const onDragStart = (event: React.DragEvent, nodeType: string, label: string) => {
     event.dataTransfer.setData('application/reactflow', nodeType);

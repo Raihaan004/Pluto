@@ -3,7 +3,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Plus, FileSpreadsheet, Layout, Undo, Redo, Trash2, Edit2, Check, X, Users, ChevronRight, History, Download, Settings, Save, Rocket, Loader2, Cloud } from 'lucide-react';
+import { Plus, FileSpreadsheet, Layout, Undo, Redo, Trash2, Edit2, Check, X, Users, ChevronRight, History, Download, Settings, Save, Rocket, Loader2, Cloud, Lock, Unlock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useUser } from '@clerk/nextjs';
@@ -104,7 +104,13 @@ const edgeTypes = {
   'editable-step': EditableStepEdge,
 };
 
-const ProcessPublishDialog = ({ isOpen, onClose, onPublish, currentName }: { isOpen: boolean, onClose: () => void, onPublish: (name: string, vName: string, vComments: string) => void, currentName: string }) => {
+const ProcessPublishDialog = ({ isOpen, onClose, onPublish, currentName, isProjectCanvas }: { 
+    isOpen: boolean, 
+    onClose: () => void, 
+    onPublish: (name: string, vName: string, vComments: string) => void, 
+    currentName: string,
+    isProjectCanvas: boolean
+}) => {
     const [name, setName] = useState(currentName);
     const [vName, setVName] = useState('');
     const [vComments, setVComments] = useState('');
@@ -121,44 +127,52 @@ const ProcessPublishDialog = ({ isOpen, onClose, onPublish, currentName }: { isO
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                    <DialogTitle>Publish Process</DialogTitle>
+                    <DialogTitle>{isProjectCanvas ? 'Update & Publish' : 'Publish Process'}</DialogTitle>
                     <DialogDescription>
-                        Set a name and version information for this publication.
+                        {isProjectCanvas 
+                            ? 'Update your project name and sync changes with Jira.' 
+                            : 'Set a name and version information for this publication.'}
                     </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                     <div className="space-y-2">
-                        <Label htmlFor="pName">Process Name</Label>
+                        <Label htmlFor="pName">{isProjectCanvas ? 'Project Name' : 'Process Name'}</Label>
                         <Input 
                             id="pName" 
                             value={name} 
                             onChange={(e) => setName(e.target.value)} 
-                            placeholder="Process Name" 
+                            placeholder={isProjectCanvas ? "Project Name" : "Process Name"}
                         />
                     </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="vName">Version Name (e.g. v1.0)</Label>
-                        <Input 
-                            id="vName" 
-                            value={vName} 
-                            onChange={(e) => setVName(e.target.value)} 
-                            placeholder="v1.0.0" 
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="vComments">Version Comments</Label>
-                        <Textarea 
-                            id="vComments" 
-                            value={vComments} 
-                            onChange={(e) => setVComments(e.target.value)} 
-                            placeholder="What changed in this version?"
-                            rows={3}
-                        />
-                    </div>
+                    {!isProjectCanvas && (
+                        <>
+                            <div className="space-y-2">
+                                <Label htmlFor="vName">Version Name (e.g. v1.0)</Label>
+                                <Input 
+                                    id="vName" 
+                                    value={vName} 
+                                    onChange={(e) => setVName(e.target.value)} 
+                                    placeholder="v1.0.0" 
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="vComments">Version Comments</Label>
+                                <Textarea 
+                                    id="vComments" 
+                                    value={vComments} 
+                                    onChange={(e) => setVComments(e.target.value)} 
+                                    placeholder="What changed in this version?"
+                                    rows={3}
+                                />
+                            </div>
+                        </>
+                    )}
                 </div>
                 <DialogFooter>
                     <Button variant="outline" onClick={onClose}>Cancel</Button>
-                    <Button onClick={() => onPublish(name, vName, vComments)}>Publish</Button>
+                    <Button onClick={() => onPublish(name, vName, vComments)}>
+                        {isProjectCanvas ? 'Publish Update' : 'Publish'}
+                    </Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
@@ -502,7 +516,7 @@ const ProcessCanvas = ({
             >
 
                 <Controls />
-                {!isPublished && <Background color="#aaa" gap={16} />}
+                {!isReadOnly && <Background color="#aaa" gap={16} />}
                 <MiniMap />
                 <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
                 {type === 'table' && (
@@ -601,6 +615,9 @@ export default function CreateProcessPage() {
   const [rowHeight, setRowHeight] = useState<number>(DEFAULT_ROW_HEIGHT);
   const [cellData, setCellData] = useState<Record<string, string>>({});
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
+  const [isUnlockConfirmOpen, setIsUnlockConfirmOpen] = useState(false);
+  const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
+  const [isSaveDraftConfirmOpen, setIsSaveDraftConfirmOpen] = useState(false);
   const [isSaveVersionDialogOpen, setIsSaveVersionDialogOpen] = useState(false);
   const [isDeleteSheetDialogOpen, setIsDeleteSheetDialogOpen] = useState(false);
   const [sheetToDelete, setSheetToDelete] = useState<string | null>(null);
@@ -754,17 +771,27 @@ export default function CreateProcessPage() {
     setEditingSheetName('');
   };
 
+  const [isLockedByStatus, setIsLockedByStatus] = useState(false);
+
   const isReadOnly = useMemo(() => {
     if (loading) return true;
     
-    // Authorization check - ALWAYS allow editing if authorized, even if published
+    // Authorization check
     const isAuthorized = role === 'admin' || role === 'editor' || projectPermission === 'owner' || projectPermission === 'editor';
-    const result = !isAuthorized;
-    console.log(`[ACL] isReadOnly: ${result}, role: ${role}, projectPermission: ${projectPermission}, projectStatus: ${projectStatus}`);
-    return result;
-  }, [role, projectPermission, loading]);
+    if (!isAuthorized) return true;
 
-  const canEdit = useMemo(() => !isReadOnly, [isReadOnly]);
+    // If authorized but project is published/locked
+    if (isProjectCanvas && projectStatus === 'published' && isLockedByStatus) {
+      return true;
+    }
+    
+    return false;
+  }, [role, projectPermission, loading, projectStatus, isProjectCanvas, isLockedByStatus]);
+
+  const canEdit = useMemo(() => {
+    const isAuthorized = role === 'admin' || role === 'editor' || projectPermission === 'owner' || projectPermission === 'editor';
+    return isAuthorized;
+  }, [role, projectPermission]);
 
   const canUnlock = useMemo(() => {
     if (loading) return false;
@@ -1045,6 +1072,7 @@ export default function CreateProcessPage() {
         
         setProjectName(data.name || 'Untitled Project');
         setProjectStatus(data.status || 'draft');
+        setIsLockedByStatus(data.status === 'published');
         setVersionName(data.version_name || null);
         setProjectOwnerId(data.user_id || null);
         setProjectProcessId(data.process_id || null);
@@ -1522,8 +1550,12 @@ export default function CreateProcessPage() {
           toast.success(`Created ${jiraCreatedCount} Jira tickets during publish`);
         }
         setProjectStatus(status);
+        setIsLockedByStatus(true);
       } else if (status) {
-        setProjectStatus(status);
+        if (projectPermission === 'owner' || projectPermission === 'editor' || role === 'admin' || role === 'editor') {
+          setProjectStatus(status);
+          setIsLockedByStatus(false);
+        }
         setSheets(updatedSheets);
       } else {
         setSheets(updatedSheets);
@@ -2005,14 +2037,26 @@ export default function CreateProcessPage() {
                 </span>
               )}
               {projectStatus === 'published' && (
-                <span className="text-[10px] font-bold uppercase tracking-wider text-green-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-100">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-green-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-100 flex items-center gap-1">
                   Published
+                  {isLockedByStatus ? <Lock className="w-2.5 h-2.5" /> : <Unlock className="w-2.5 h-2.5" />}
                 </span>
               )}
             </div>
           )}
         </div>
         <div className="flex items-center gap-2">
+          {projectId && projectStatus === 'published' && isLockedByStatus && (projectPermission === 'owner' || projectPermission === 'editor' || role === 'admin' || role === 'editor') && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsUnlockConfirmOpen(true)}
+              className="flex items-center gap-2 border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 h-8"
+            >
+              <Unlock size={14} />
+              Unlock to Edit
+            </Button>
+          )}
           <button
             onClick={handleUndo}
             disabled={!canUndo}
@@ -2062,7 +2106,7 @@ export default function CreateProcessPage() {
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
-                    onClick={() => handleSaveProject('draft')}
+                    onClick={() => setIsSaveDraftConfirmOpen(true)}
                     disabled={isSaving || !hasUnsavedChanges}
                     className="border-blue-600 text-blue-600 hover:bg-blue-50"
                   >
@@ -2084,7 +2128,7 @@ export default function CreateProcessPage() {
                 <>
                   <Button
                     variant="outline"
-                    onClick={() => handleSaveProcess('draft')}
+                    onClick={() => setIsSaveDraftConfirmOpen(true)}
                     disabled={isSaving || !hasUnsavedChanges}
                     className="border-blue-600 text-blue-600 hover:bg-blue-50 h-9 px-4"
                   >
@@ -2184,7 +2228,7 @@ export default function CreateProcessPage() {
                 activeSheetId === sheet.id ? 'bg-gray-200' : 'hover:bg-gray-100'
               )}
               onClick={() => handleSwitchSheet(sheet.id)}
-              onDoubleClick={() => startEditingSheet(sheet)}
+              onDoubleClick={() => !isReadOnly && startEditingSheet(sheet)}
             >
               {editingSheetId === sheet.id ? (
                 <input
@@ -2216,30 +2260,26 @@ export default function CreateProcessPage() {
               )}
             </div>
           ))}
-          <button
-            onClick={() => handleAddSheet('flow')}
-            disabled={isReadOnly}
-            className={cn(
-              "p-1.5 rounded-md ml-2 text-gray-600 flex items-center gap-1 text-xs font-semibold",
-              isReadOnly ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-200"
-            )}
-            title={isReadOnly ? "Project is locked" : "Add Child Process"}
-          >
-            <Plus className="w-3 h-3" />
-            <span>Child Process</span>
-          </button>
-          <button
-            onClick={() => handleAddSheet('table')}
-            disabled={isReadOnly}
-            className={cn(
-              "p-1.5 rounded-md ml-2 text-indigo-600 flex items-center gap-1 text-xs font-semibold bg-indigo-50",
-              isReadOnly ? "opacity-50 cursor-not-allowed" : "hover:bg-indigo-100"
-            )}
-            title={isReadOnly ? "Project is locked" : "Add Work Sheet (Table Style)"}
-          >
-            <FileSpreadsheet className="w-3 h-3" />
-            <span>Work Sheet</span>
-          </button>
+          {!isReadOnly && (
+            <>
+              <button
+                onClick={() => handleAddSheet('flow')}
+                className="p-1.5 rounded-md ml-2 text-gray-600 hover:bg-gray-200 flex items-center gap-1 text-xs font-semibold"
+                title="Add Child Process"
+              >
+                <Plus className="w-3 h-3" />
+                <span>Child Process</span>
+              </button>
+              <button
+                onClick={() => handleAddSheet('table')}
+                className="p-1.5 rounded-md ml-2 text-indigo-600 hover:bg-indigo-100 flex items-center gap-1 text-xs font-semibold bg-indigo-50"
+                title="Add Work Sheet (Table Style)"
+              >
+                <FileSpreadsheet className="w-3 h-3" />
+                <span>Work Sheet</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -2248,6 +2288,7 @@ export default function CreateProcessPage() {
         isOpen={isPublishDialogOpen}
         onClose={() => setIsPublishDialogOpen(false)}
         currentName={projectName}
+        isProjectCanvas={isProjectCanvas}
         onPublish={(name, vName, vComments) => {
             setProjectName(name);
             if (isProjectCanvas) {
@@ -2258,6 +2299,40 @@ export default function CreateProcessPage() {
             setIsPublishDialogOpen(false);
         }}
     />
+
+    <Dialog open={isUnlockConfirmOpen} onOpenChange={setIsUnlockConfirmOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Unlock Project?</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to unlock this project for editing? Any changes made will need to be re-published to be visible to viewers.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsUnlockConfirmOpen(false)}>Cancel</Button>
+          <Button onClick={() => { setIsLockedByStatus(false); setIsUnlockConfirmOpen(false); }}>Unlock</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={isSaveDraftConfirmOpen} onOpenChange={setIsSaveDraftConfirmOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Save Draft?</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to save these changes as a draft?
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsSaveDraftConfirmOpen(false)}>Cancel</Button>
+          <Button onClick={() => { 
+            if (projectId) handleSaveProject('draft');
+            else handleSaveProcess('draft');
+            setIsSaveDraftConfirmOpen(false); 
+          }}>Save Draft</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
     <Dialog open={isSaveVersionDialogOpen} onOpenChange={setIsSaveVersionDialogOpen}>
       <DialogContent>

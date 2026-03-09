@@ -1,7 +1,97 @@
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON, BigInteger, ForeignKey, Text
+from database import Base
 
+# --- SQLAlchemy Models ---
+
+class UserDB(Base):
+    __tablename__ = "users"
+    id = Column(BigInteger, primary_key=True, index=True)
+    clerk_id = Column(String, unique=True, nullable=False)
+    email = Column(String, nullable=False)
+    first_name = Column(String, nullable=True)
+    last_name = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
+    role = Column(String, default='viewer')
+    organization = Column(String, nullable=True)
+    org_id = Column(String, nullable=True)
+    is_verified = Column(Boolean, default=False)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    approval_status = Column(String, default='pending')
+    is_suspended = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+class PendingUserDB(Base):
+    __tablename__ = "pending_users"
+    id = Column(BigInteger, primary_key=True, index=True)
+    clerk_id = Column(String, unique=True, nullable=False)
+    email = Column(String, nullable=False)
+    first_name = Column(String, nullable=True)
+    last_name = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
+    role = Column(String, default='viewer')
+    organization = Column(String, nullable=True)
+    org_id = Column(String, nullable=True)
+    is_verified = Column(Boolean, default=False)
+    approval_status = Column(String, default='pending')
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+class InstanceSettingsDB(Base):
+    __tablename__ = "instance_settings"
+    id = Column(BigInteger, primary_key=True, index=True)
+    org_id = Column(String, nullable=False)
+    org_name = Column(String, nullable=False)
+    org_code = Column(String, nullable=True)
+    license_key = Column(String, nullable=False)
+    admin_email = Column(String, nullable=False)
+    plan = Column(String, nullable=True)
+    status = Column(String, default='active')
+    activated_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+
+class ProcessDB(Base):
+    __tablename__ = "processes"
+    id = Column(BigInteger, primary_key=True, index=True)
+    user_id = Column(String, nullable=False)
+    org_id = Column(String, nullable=True)
+    name = Column(String, nullable=False)
+    sheets = Column(JSON, nullable=False, default=[])
+    versions = Column(JSON, nullable=False, default=[])
+    status = Column(String, nullable=False, default='draft')
+    type = Column(String, default='freestyle')
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class ProjectDB(Base):
+    __tablename__ = "projects"
+    id = Column(BigInteger, primary_key=True, index=True)
+    user_id = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    process_id = Column(BigInteger, nullable=True)
+    version_name = Column(String, nullable=True)
+    sheets = Column(JSON, nullable=False, default=[])
+    collaborators = Column(JSON, nullable=False, default=[])
+    progress = Column(Integer, default=0)
+    status = Column(String, default='draft')
+    jira_project_key = Column(String, nullable=True)
+    org_id = Column(BigInteger, nullable=True)
+    type = Column(String, default='freestyle')
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class NotificationDB(Base):
+    __tablename__ = "notifications"
+    id = Column(BigInteger, primary_key=True, index=True)
+    user_id = Column(String, nullable=False)
+    type = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    read = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+# --- Pydantic Models ---
 class UserCreate(BaseModel):
     clerk_id: str
     email: str
@@ -57,6 +147,7 @@ class ProjectCreate(BaseModel):
     process_id: int
     version_name: str
     type: str = 'freestyle'
+    org_id: Optional[int] = None
 
 class ProjectUpdate(BaseModel):
     sheets: Optional[List[ProcessSheet]] = None
