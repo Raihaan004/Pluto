@@ -78,6 +78,9 @@ create table if not exists public.instance_settings (
   org_code text not null,
   license_key text not null,
   status text default 'active',
+  jira_url text,
+  jira_email text,
+  jira_api_token text,
   last_synced_at timestamp with time zone,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );

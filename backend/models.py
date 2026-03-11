@@ -48,8 +48,16 @@ class InstanceSettingsDB(Base):
     admin_email = Column(String, nullable=False)
     plan = Column(String, nullable=True)
     status = Column(String, default='active')
+    jira_url = Column(String, nullable=True)
+    jira_email = Column(String, nullable=True)
+    jira_api_token = Column(String, nullable=True)
     activated_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
+
+class JiraConfig(BaseModel):
+    jira_url: str
+    jira_email: str
+    jira_api_token: str
 
 class ProcessDB(Base):
     __tablename__ = "processes"
@@ -148,6 +156,7 @@ class ProjectCreate(BaseModel):
     version_name: str
     type: str = 'freestyle'
     org_id: Optional[int] = None
+    jira_project_key: Optional[str] = None
 
 class ProjectUpdate(BaseModel):
     sheets: Optional[List[ProcessSheet]] = None

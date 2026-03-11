@@ -43,6 +43,7 @@ export function CreateProjectButton() {
   const [projectName, setProjectName] = useState("")
   const [selectedProcessId, setSelectedProcessId] = useState("")
   const [selectedVersion, setSelectedVersion] = useState("")
+  const [jiraProjectKey, setJiraProjectKey] = useState("PLUTO")
   const [isCreating, setIsCreating] = useState(false)
 
   // All hooks must be called before any conditional returns
@@ -67,13 +68,15 @@ export function CreateProjectButton() {
         user_id: user.id,
         name: projectName,
         process_id: parseInt(selectedProcessId),
-        version_name: selectedVersion
+        version_name: selectedVersion,
+        jira_project_key: jiraProjectKey
       })
       
       // Reset form
       setProjectName("")
       setSelectedProcessId("")
       setSelectedVersion("")
+      setJiraProjectKey("PLUTO")
       setIsDialogOpen(false)
       
       // Navigate to the project editor
@@ -178,13 +181,27 @@ export function CreateProjectButton() {
               </Select>
             </div>
           )}
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="jiraKey" className="text-right flex flex-col items-end">
+              <span>JIRA Project</span>
+              <span className="text-[10px] text-muted-foreground font-normal">(Required)</span>
+            </Label>
+            <Input
+              id="jiraKey"
+              value={jiraProjectKey}
+              onChange={(e) => setJiraProjectKey(e.target.value.toUpperCase())}
+              placeholder="e.g. PLUTO"
+              className="col-span-3 font-mono"
+              required
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
           <Button 
             onClick={handleCreateProject} 
             className="bg-green-600 hover:bg-green-700 text-white"
-            disabled={!projectName || !selectedProcessId || !selectedVersion || isCreating}
+            disabled={!projectName || !selectedProcessId || !selectedVersion || !jiraProjectKey || isCreating}
           >
             {isCreating ? "Creating..." : "Save Project"}
           </Button>

@@ -812,6 +812,12 @@ export default function CreateProcessPage() {
 
   // Check if there are unsaved changes
   const checkForChanges = useCallback(() => {
+    // If project is locked (read-only), we shouldn't have unsaved changes
+    if (isReadOnly) {
+      setHasUnsavedChanges(false);
+      return;
+    }
+
     // For new unsaved processes
     if (!originalSavedState || (!projectId && !processId)) {
       // Check if current state differs from initial state
@@ -874,7 +880,7 @@ export default function CreateProcessPage() {
   // Update check for changes when relevant state changes
   useEffect(() => {
     checkForChanges();
-  }, [cellData, columnWidths, rowHeight, projectName, sheets, activeSheetId, checkForChanges]);
+  }, [cellData, columnWidths, rowHeight, projectName, sheets, activeSheetId, isReadOnly, checkForChanges]);
 
   const triggerJiraForSheets = useCallback(async (sheetsToProcess: ProcessSheet[]) => {
     let createdCount = 0;
@@ -1483,7 +1489,9 @@ export default function CreateProcessPage() {
 
   const handleSaveProject = useCallback(async (status?: string, vName?: string, vComments?: string) => {
     // Allow saving if status is provided (e.g. for unlocking) even if isReadOnly is true
-    if (!projectId || (isReadOnly && !status) || (!hasUnsavedChanges && !status)) return;
+    // If status is provided, we ignore hasUnsavedChanges check
+    if (!projectId || (isReadOnly && !status)) return;
+    if (!status && !hasUnsavedChanges) return;
     
     setIsSaving(true);
     setLoadingMessage(status === 'published' ? 'Publishing Project...' : 'Saving Changes...');
@@ -1539,6 +1547,8 @@ export default function CreateProcessPage() {
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/project/${projectId}`, payload);
       
       // Sync local state after successful save
+      setHasUnsavedChanges(false); 
+
       if (status === 'published') {
         setSheets(finalSheets);
         const activeSheetAfterJira = finalSheets.find((s: any) => s.id === activeSheetId);
@@ -1651,6 +1661,8 @@ export default function CreateProcessPage() {
         }
       }
       
+      setHasUnsavedChanges(false);
+
       // Update local state and status immediately
       setSheets(finalSheets);
       // Ensure we explicitly set the new status to refresh UI components that depend on it?
@@ -2036,10 +2048,10 @@ export default function CreateProcessPage() {
                   {versionName}
                 </span>
               )}
-              {projectStatus === 'published' && (
+              {projectStatus === 'published' && isLockedByStatus && (
                 <span className="text-[10px] font-bold uppercase tracking-wider text-green-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-100 flex items-center gap-1">
                   Published
-                  {isLockedByStatus ? <Lock className="w-2.5 h-2.5" /> : <Unlock className="w-2.5 h-2.5" />}
+                  <Lock className="w-2.5 h-2.5" />
                 </span>
               )}
             </div>
@@ -2107,7 +2119,7 @@ export default function CreateProcessPage() {
                   <Button
                     variant="outline"
                     onClick={() => setIsSaveDraftConfirmOpen(true)}
-                    disabled={isSaving || !hasUnsavedChanges}
+                    disabled={isSaving}
                     className="border-blue-600 text-blue-600 hover:bg-blue-50"
                   >
                     {isSaving ? 'Saving...' : 'Save Draft'}
@@ -2129,7 +2141,7 @@ export default function CreateProcessPage() {
                   <Button
                     variant="outline"
                     onClick={() => setIsSaveDraftConfirmOpen(true)}
-                    disabled={isSaving || !hasUnsavedChanges}
+                    disabled={isSaving}
                     className="border-blue-600 text-blue-600 hover:bg-blue-50 h-9 px-4"
                   >
                     {isSaving ? 'Saving...' : 'Save Draft'}
@@ -2310,7 +2322,35 @@ export default function CreateProcessPage() {
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => setIsUnlockConfirmOpen(false)}>Cancel</Button>
-          <Button onClick={() => { setIsLockedByStatus(false); setIsUnlockConfirmOpen(false); }}>Unlock</Button>
+          <Button onClick={async () => { 
+            setIsLockedByStatus(false); 
+            setIsUnlockConfirmOpen(false); 
+            // Automatically save status change to backend
+            if (projectId) {
+              try {
+                await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/project/${projectId}`, {
+                   status: 'draft',
+                   type: 'freestyle',
+                   name: projectName,
+                   sheets: sheets.map(s => ({
+                     id: s.id,
+                     name: s.name,
+                     nodes: s.nodes,
+                     edges: s.edges,
+                     type: s.type,
+                     cellData: s.cellData,
+                     columnWidths: s.columnWidths,
+                     rowHeight: s.rowHeight
+                   }))
+                });
+                setProjectStatus('draft');
+                toast.success('Project unlocked and saved as draft');
+              } catch (error) {
+                console.error('Failed to auto-save unlock status:', error);
+                toast.error('Failed to sync unlock status with server');
+              }
+            }
+          }}>Unlock</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

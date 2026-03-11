@@ -1,17 +1,31 @@
 from fastapi import FastAPI, HTTPException, Header, Query, BackgroundTasks, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
 import os
 import asyncio
+import zipfile
+import json
+import tempfile
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from database import admin_supabase, get_db, engine, Base, SessionLocal
 from models import (
     UserCreate, RoleUpdate, StatusUpdate, ProcessPackageCreate, ProcessRename, 
     ProcessVersionCreate, ProjectCreate, ProjectUpdate, CollaboratorAdd, 
-    ConnectionJiraTrigger, LicenseVerify,
+    ConnectionJiraTrigger, LicenseVerify, JiraConfig,
     UserDB, PendingUserDB, InstanceSettingsDB, ProcessDB, ProjectDB, NotificationDB
+)
+
+app = FastAPI(title="Pluto API")
+
+# Setup CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Add a check for suspension status that can be used as a dependency
@@ -29,26 +43,87 @@ async def check_suspension(db: Session = Depends(get_db)):
         # If admin DB is unreachable, we default to local state or allow
         pass
 
-# You can apply this to the whole app or specific routers
-# For now, let's update the instance-status and add a middleware-like check
+@app.get("/export-backup")
+async def export_backup(db: Session = Depends(get_db)):
+    try:
+        # Fetch all data
+        projects = db.query(ProjectDB).all()
+        processes = db.query(ProcessDB).all()
+        
+        # Create a temporary file for the zip
+        fd, temp_path = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)
+        
+        with zipfile.ZipFile(temp_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Export Projects
+            project_data = []
+            for p in projects:
+                project_data.append({
+                    "id": p.id,
+                    "name": p.name,
+                    "status": p.status,
+                    "created_at": str(p.created_at),
+                    "updated_at": str(p.updated_at),
+                    "org_id": p.org_id,
+                    "sheets": p.sheets,
+                    "progress": p.progress,
+                    "type": p.type,
+                    "user_id": p.user_id,
+                    "process_id": p.process_id,
+                    "collaborators": p.collaborators
+                })
+            zipf.writestr("projects.json", json.dumps(project_data, indent=2))
+            
+            # Export Processes
+            process_data = []
+            for proc in processes:
+                process_data.append({
+                    "id": proc.id,
+                    "name": proc.name,
+                    "status": proc.status,
+                    "created_at": str(proc.created_at),
+                    "updated_at": str(proc.updated_at),
+                    "org_id": proc.org_id,
+                    "sheets": proc.sheets,
+                    "versions": proc.versions,
+                    "type": proc.type,
+                    "user_id": proc.user_id
+                })
+            zipf.writestr("processes.json", json.dumps(process_data, indent=2))
+            
+            # Metadata
+            metadata = {
+                "exported_at": str(datetime.now()),
+                "total_projects": len(projects),
+                "total_processes": len(processes),
+                "version": "1.0"
+            }
+            zipf.writestr("metadata.json", json.dumps(metadata, indent=2))
+            
+        return FileResponse(
+            temp_path, 
+            media_type="application/zip", 
+            filename=f"pluto_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        )
+    except Exception as e:
+        print(f"Backup Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from jira_utils import sync_task_to_jira, create_connection_jira_ticket
 
 import os
+import traceback
 from dotenv import load_dotenv
+from fastapi.exceptions import RequestValidationError
 
 load_dotenv()
 
 # Create database tables if they don't exist
 Base.metadata.create_all(bind=engine)
-
-import traceback
-
-from fastapi.exceptions import RequestValidationError
-
-app = FastAPI()
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -223,6 +298,31 @@ async def block_if_suspended(request: Request, call_next):
 @app.get("/")
 def read_root():
     return {"Hello": "World", "status": "Backend is running"}
+
+@app.get("/jira-config")
+def get_jira_config(db: Session = Depends(get_db)):
+    """Retrieve JIRA configuration from instance settings"""
+    settings = db.query(InstanceSettingsDB).first()
+    if not settings:
+        return {"jira_url": "", "jira_email": "", "jira_api_token": ""}
+    return {
+        "jira_url": settings.jira_url or "",
+        "jira_email": settings.jira_email or "",
+        "jira_api_token": settings.jira_api_token or ""
+    }
+
+@app.post("/jira-config")
+def update_jira_config(config: JiraConfig, db: Session = Depends(get_db)):
+    """Update JIRA configuration in instance settings"""
+    settings = db.query(InstanceSettingsDB).first()
+    if not settings:
+        raise HTTPException(status_code=404, detail="Instance settings not found. Please activate license first.")
+    
+    settings.jira_url = config.jira_url
+    settings.jira_email = config.jira_email
+    settings.jira_api_token = config.jira_api_token
+    db.commit()
+    return {"status": "success", "message": "JIRA configuration updated"}
 
 @app.get("/health")
 def health_check(db: Session = Depends(get_db)):
@@ -1089,6 +1189,7 @@ def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
             sheets=selected_version["sheets"], # Copy the sheets
             type=project.type,
             org_id=project.org_id,
+            jira_project_key=project.jira_project_key,
             updated_at=datetime.now()
         )
         
@@ -1234,7 +1335,8 @@ def process_jira_sync(project_id: int, project_name: str, version: str, sheets: 
             "project_owner": project_owner,
             "project_status": project.status,
             "project_id": project_id,
-            "project_type": project.type
+            "project_type": project.type,
+            "jira_project_key": project.jira_project_key
         }
 
         updated_sheets = []

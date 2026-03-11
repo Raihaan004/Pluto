@@ -1,30 +1,45 @@
 import os
 from jira import JIRA
 from dotenv import load_dotenv
+from database import SessionLocal
+from models import InstanceSettingsDB
 
 load_dotenv()
 
-JIRA_URL = os.environ.get("JIRA_URL")
-JIRA_EMAIL = os.environ.get("JIRA_EMAIL")
-JIRA_API_TOKEN = os.environ.get("JIRA_API_TOKEN")
-JIRA_PROJECT_KEY = os.environ.get("JIRA_PROJECT_KEY")
-
 def get_jira_client():
-    if not all([JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN]):
-        return None
+    db = SessionLocal()
     try:
-        return JIRA(server=JIRA_URL, basic_auth=(JIRA_EMAIL, JIRA_API_TOKEN))
+        settings = db.query(InstanceSettingsDB).first()
+        if settings and settings.jira_url and settings.jira_email and settings.jira_api_token:
+            jira_url = settings.jira_url
+            jira_email = settings.jira_email
+            jira_api_token = settings.jira_api_token
+        else:
+            # Fallback to env vars
+            jira_url = os.environ.get("JIRA_URL")
+            jira_email = os.environ.get("JIRA_EMAIL")
+            jira_api_token = os.environ.get("JIRA_API_TOKEN")
+
+        if not all([jira_url, jira_email, jira_api_token]):
+            return None
+        
+        return JIRA(server=jira_url, basic_auth=(jira_email, jira_api_token))
     except Exception as e:
         print(f"Jira connection error: {e}")
         return None
+    finally:
+        db.close()
 
 def sync_task_to_jira(node_data, metadata, user_map=None):
     jira = get_jira_client()
-    if not jira or not JIRA_PROJECT_KEY:
+    # Use jira_project_key from metadata if available, otherwise fallback to env
+    jira_project_key = metadata.get('jira_project_key') or os.environ.get("JIRA_PROJECT_KEY")
+    
+    if not jira or not jira_project_key:
         return None
 
     user_map = user_map or {}
-    project_key = JIRA_PROJECT_KEY.split('#')[0].strip()
+    project_key = jira_project_key.split('#')[0].strip()
     project_name = metadata.get('project_name', 'Unknown Project')
     version = metadata.get('version', 'N/A')
     project_owner = metadata.get('project_owner', 'N/A')
