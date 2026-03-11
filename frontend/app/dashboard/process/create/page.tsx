@@ -318,6 +318,7 @@ const ProcessCanvas = ({
         type,
         position,
         data: { label: label || `${type} node` },
+        style: type === 'decision' ? { width: 150, height: 150 } : undefined,
       };
 
       setNodes((nds) => {
@@ -394,20 +395,28 @@ const ProcessCanvas = ({
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      // Prevent header/table-specific nodes from being moved if needed
-      // (For now we allow standard nodes in flow mode)
-
+      // Role-based protection for position changes
       if (isReadOnly) {
         const draggingPositions = changes.filter(c => c.type === 'position' && (c as any).dragging);
         if (draggingPositions.length > 0) {
           const allAllowed = draggingPositions.every(change => {
             const node = nodes.find(n => n.id === (change as any).id);
             if (!node) return false;
+            // Allow if explicitly assigned as responsible or support, or if they have editor/owner rights (handled by isReadOnly)
             const isResponsible = node.data?.responsibility?.includes(currentUser?.id);
             const isSupport = node.data?.support?.includes(currentUser?.id);
             return isResponsible || isSupport;
           });
-          if (!allAllowed) return;
+          if (!allAllowed) {
+            toast.error("You don't have permission to move these nodes");
+            return;
+          }
+        }
+        
+        // Block deletions in read-only mode entirely
+        if (changes.some(c => c.type === 'remove')) {
+          toast.error("You don't have permission to delete nodes");
+          return;
         }
       }
 
@@ -1548,6 +1557,19 @@ export default function CreateProcessPage() {
       
       // Sync local state after successful save
       setHasUnsavedChanges(false); 
+      setOriginalSavedState({
+        sheets: sheetsToSave.map(s => ({
+          id: s.id,
+          name: s.name,
+          nodes: JSON.parse(JSON.stringify(s.nodes)),
+          edges: JSON.parse(JSON.stringify(s.edges)),
+          type: s.type,
+          cellData: s.cellData,
+          columnWidths: s.columnWidths,
+          rowHeight: s.rowHeight
+        })),
+        projectName
+      });
 
       if (status === 'published') {
         setSheets(finalSheets);
@@ -1571,17 +1593,6 @@ export default function CreateProcessPage() {
         setSheets(updatedSheets);
       }
 
-      // Update original saved state
-      setOriginalSavedState({
-        sheets: sheetsToSave.map(s => ({
-          id: s.id,
-          name: s.name,
-          nodes: JSON.parse(JSON.stringify(s.nodes)),
-          edges: JSON.parse(JSON.stringify(s.edges))
-        })),
-        projectName
-      });
-      setHasUnsavedChanges(false);
       toast.success(status === 'published' ? 'Project published successfully!' : 'Project saved successfully!');
     } catch (error) {
       console.error('Failed to save project:', error);
@@ -1663,22 +1674,6 @@ export default function CreateProcessPage() {
       
       setHasUnsavedChanges(false);
 
-      // Update local state and status immediately
-      setSheets(finalSheets);
-      // Ensure we explicitly set the new status to refresh UI components that depend on it?
-      // Actually, we are moving away from status-based locking, but it's good to keep state consistent.
-      setProjectStatus(status);
-      
-      if (status === 'published') {
-        const activeSheetAfterJira = finalSheets.find((s: any) => s.id === activeSheetId);
-        if (activeSheetAfterJira) {
-          setNodes(activeSheetAfterJira.nodes);
-        }
-        if (jiraCreatedCount > 0) {
-          toast.success(`Created ${jiraCreatedCount} Jira tickets during publish`);
-        }
-      }
-
       // Update original saved state
       const sheetsToSave = finalSheets.map(s => ({
         id: s.id,
@@ -1690,15 +1685,15 @@ export default function CreateProcessPage() {
         columnWidths: s.columnWidths,
         rowHeight: s.rowHeight
       }));
-      
-      // Critical: Update local projectStatus state to reflect server state
-      if (status) setProjectStatus(status);
-      
+
       setOriginalSavedState({
         sheets: sheetsToSave,
         projectName
       });
-      setHasUnsavedChanges(false);
+
+      // Update local state and status immediately
+      setSheets(finalSheets);
+      if (status) setProjectStatus(status);
       toast.success(`Process ${status === 'draft' ? 'saved as draft' : 'published'} successfully!`);
     } catch (error) {
       console.error('Failed to save process:', error);

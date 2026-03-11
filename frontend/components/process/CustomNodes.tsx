@@ -143,7 +143,7 @@ const WorkProductNode = ({ data, selected, width, height }: any) => {
   const fontSize = getFontSize(width, height);
   return (
     <>
-      <NodeResizer color="#2563eb" isVisible={!isPublished && selected} minWidth={100} minHeight={50} />
+      <NodeResizer color="#2563eb" isVisible={!isPublished && selected} minWidth={10} minHeight={10} />
       <div 
         className="px-8 py-2 shadow-md rounded-md border-2 w-full h-full flex items-center justify-center relative group"
         style={{ 
@@ -176,7 +176,7 @@ const ActivityNode = ({ data, selected, width, height }: any) => {
   const fontSize = getFontSize(width, height);
   return (
     <>
-      <NodeResizer color="#ca8a04" isVisible={!isPublished && selected} minWidth={100} minHeight={50} />
+      <NodeResizer color="#ca8a04" isVisible={!isPublished && selected} minWidth={10} minHeight={10} />
       <div 
         className="px-8 py-2 shadow-md rounded-md border-2 w-full h-full flex items-center justify-center relative group"
         style={{ 
@@ -209,10 +209,10 @@ const DecisionNode = ({ data, selected, width, height }: any) => {
   const fontSize = getFontSize(width, height);
   return (
     <>
-      <NodeResizer color="#ea580c" isVisible={!isPublished && selected} minWidth={100} minHeight={100} />
-      <div className="w-full h-full relative flex items-center justify-center group">
+      <NodeResizer color="#ea580c" isVisible={!isPublished && selected} minWidth={10} minHeight={10} />
+      <div className="w-full h-full relative flex items-center justify-center group overflow-visible">
         <svg 
-          className="absolute inset-0 w-full h-full overflow-visible"
+          className="absolute inset-[-20%] w-[140%] h-[140%] overflow-visible pointer-events-none"
           viewBox="0 0 100 100" 
           preserveAspectRatio="none"
         >
@@ -227,14 +227,14 @@ const DecisionNode = ({ data, selected, width, height }: any) => {
         </svg>
         <div className="relative z-10 w-full h-full flex items-center justify-center pointer-events-none">
            {/* Icons need to be positioned carefully in diamond */}
-           <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-auto">
+           <div className="absolute left-0 top-1/2 -translate-y-1/2 pointer-events-auto">
               <NodeIcons data={data} type="decision" />
            </div>
-           <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-auto">
+           <div className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-auto">
               <StatusIndicator data={data} />
            </div>
            <div 
-              className={fontSize ? "px-6" : "text-sm px-6"}
+              className={fontSize ? "px-4" : "text-sm px-4"}
               style={{
                 fontSize: fontSize,
                 color: data.textColor || '#7C2D12',
@@ -248,14 +248,14 @@ const DecisionNode = ({ data, selected, width, height }: any) => {
         </div>
         {/* Handles must always exist for edges to render, but we hide them when published */}
         <div className={isPublished ? "opacity-0 pointer-events-none" : ""}>
-          <Handle type="target" position={Position.Top} id="t-top" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-          <Handle type="source" position={Position.Top} id="s-top" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-          <Handle type="target" position={Position.Bottom} id="t-bottom" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-          <Handle type="source" position={Position.Bottom} id="s-bottom" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-          <Handle type="target" position={Position.Left} id="t-left" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-          <Handle type="source" position={Position.Left} id="s-left" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-          <Handle type="target" position={Position.Right} id="t-right" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-          <Handle type="source" position={Position.Right} id="s-right" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <Handle type="target" position={Position.Top} id="t-top" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" style={{ top: '-20%' }} />
+          <Handle type="source" position={Position.Top} id="s-top" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" style={{ top: '-20%' }} />
+          <Handle type="target" position={Position.Bottom} id="t-bottom" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" style={{ bottom: '-20%' }} />
+          <Handle type="source" position={Position.Bottom} id="s-bottom" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" style={{ bottom: '-20%' }} />
+          <Handle type="target" position={Position.Left} id="t-left" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" style={{ left: '-20%' }} />
+          <Handle type="source" position={Position.Left} id="s-left" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" style={{ left: '-20%' }} />
+          <Handle type="target" position={Position.Right} id="t-right" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" style={{ right: '-20%' }} />
+          <Handle type="source" position={Position.Right} id="s-right" className="w-3 h-3 bg-orange-500 opacity-0 group-hover:opacity-100 transition-opacity" style={{ right: '-20%' }} />
         </div>
       </div>
     </>
@@ -267,7 +267,7 @@ const ProcessNode = ({ data, selected, width, height }: any) => {
   const fontSize = getFontSize(width, height);
   return (
     <>
-      <NodeResizer color="#16a34a" isVisible={!isPublished && selected} minWidth={100} minHeight={50} />
+      <NodeResizer color="#16a34a" isVisible={!isPublished && selected} minWidth={10} minHeight={10} />
       <div 
         className="px-8 py-2 shadow-md rounded-md border-2 w-full h-full flex items-center justify-center relative group"
         style={{ 
@@ -300,7 +300,7 @@ const DocumentNode = ({ data, selected, width, height }: any) => {
   const fontSize = getFontSize(width, height);
   return (
     <>
-      <NodeResizer color="#0891b2" isVisible={!isPublished && selected} minWidth={100} minHeight={50} />
+      <NodeResizer color="#0891b2" isVisible={!isPublished && selected} minWidth={10} minHeight={10} />
       <div 
         className="px-8 py-2 shadow-md rounded-none border-2 w-full h-full flex items-center justify-center relative group"
         style={{ 
@@ -389,7 +389,7 @@ const SwimLaneNode = ({ id, data, selected, width, height }: any) => {
 
   return (
     <>
-      <NodeResizer isVisible={!isPublished && selected} minWidth={isHorizontal ? 400 : 200} minHeight={isHorizontal ? 200 : 400} />
+      <NodeResizer isVisible={!isPublished && selected} minWidth={10} minHeight={10} />
       <div 
         className={`w-full h-full rounded-lg border-2 border-dashed bg-gray-100/50 flex ${isHorizontal ? 'flex-row' : 'flex-col'}`}
         style={{ borderColor: data.color || '#cccccc', zIndex: -1 }}

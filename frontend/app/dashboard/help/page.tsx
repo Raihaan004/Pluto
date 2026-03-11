@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Search, Book, FileText, Users, MessageCircle, ExternalLink, CheckCircle2, AlertCircle, HelpCircle } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog"
@@ -11,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { Particles } from "@/components/magicui/particles"
 
 export default function HelpPage() {
   const [searchQuery, setSearchQuery] = useState("")
@@ -100,167 +102,113 @@ export default function HelpPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8 max-w-6xl mx-auto p-8 pb-20">
-      {/* Header Section */}
-      <div className="flex flex-col gap-4 text-center py-8">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 mx-auto mb-4">
-          <HelpCircle size={32} />
-        </div>
-        <h1 className="text-4xl font-bold tracking-tight text-gray-900 dark:text-white">How can we help you?</h1>
-        <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-          Everything you need to know about Pluto. Search our knowledge base or browse common questions below.
-        </p>
-        <div className="relative max-w-xl mx-auto w-full mt-6">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-          <Input 
-            placeholder="Search for help, guides, or FAQs..." 
-            className="pl-12 h-14 text-lg shadow-sm border-gray-200 focus:ring-blue-500"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {/* Quick Access Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {categories.map((cat) => (
-          <Dialog key={cat.id}>
-            <DialogTrigger asChild>
-              <Card className="hover:shadow-md transition-all cursor-pointer border-gray-200 hover:border-blue-200 group">
-                <CardHeader>
-                  <cat.icon className={cn("h-10 w-10 mb-2 transition-transform group-hover:scale-110", cat.color)} />
-                  <CardTitle className="group-hover:text-blue-600 transition-colors">{cat.title}</CardTitle>
-                  <CardDescription>{cat.description}</CardDescription>
-                </CardHeader>
-              </Card>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-2xl">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-2xl">
-                  <cat.icon className={cat.color} />
-                  {cat.title}
-                </DialogTitle>
-                <DialogDescription>{cat.description}</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-6 py-4">
-                {cat.content.map((item, i) => (
-                  <div key={i} className="space-y-2">
-                    <h4 className="font-bold text-gray-900 flex items-center gap-2">
-                      <CheckCircle2 size={16} className="text-green-500" />
-                      {item.title}
-                    </h4>
-                    <p className="text-gray-600 text-sm leading-relaxed">{item.text}</p>
-                  </div>
-                ))}
-              </div>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline">Close</Button>
-                </DialogClose>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        ))}
-      </div>
-
-      {/* FAQs Section */}
-      <div className="grid gap-10 md:grid-cols-3 mt-4">
-        <div className="md:col-span-2 space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-gray-900">Frequently Asked Questions</h2>
-            <span className="text-sm text-muted-foreground">{filteredFaqs.length} articles</span>
+    <div className="flex flex-col gap-8 max-w-6xl mx-auto p-8 pb-20 relative min-h-screen">
+      <Particles
+        className="absolute inset-0 z-0"
+        quantity={150}
+        staticity={50}
+        color="#3b82f6"
+      />
+      
+      <div className="relative z-10 flex flex-col gap-8">
+        {/* Header Section */}
+        <div className="flex flex-col gap-4 text-center py-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-blue-600 text-white mx-auto mb-4 shadow-xl shadow-blue-200 animate-in zoom-in duration-500">
+            <HelpCircle size={32} />
           </div>
-          
-          {filteredFaqs.length > 0 ? (
-            <Accordion type="single" collapsible className="w-full space-y-3">
-              {filteredFaqs.map((faq, index) => (
-                <AccordionItem key={index} value={`item-${index}`} className="border rounded-xl px-4 bg-white shadow-sm">
-                  <AccordionTrigger className="text-left font-medium hover:no-underline py-4">
-                    {faq.question}
-                  </AccordionTrigger>
-                  <AccordionContent className="text-gray-600 pb-4 leading-relaxed">
-                    {faq.answer}
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
-          ) : (
-            <div className="text-center py-12 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
-              <AlertCircle className="h-10 w-10 text-gray-400 mx-auto mb-3" />
-              <h3 className="text-lg font-medium text-gray-900">No results found</h3>
-              <p className="text-muted-foreground">We couldn't find any articles matching "{searchQuery}"</p>
-              <Button variant="link" onClick={() => setSearchQuery("")} className="mt-2">Clear search</Button>
-            </div>
-          )}
+          <h1 className="text-5xl font-bold tracking-tight text-gray-900 dark:text-white uppercase italic">Pluto Help Center</h1>
+          <p className="text-gray-500 text-xl max-w-2xl mx-auto font-medium">
+            Master the art of Functional Safety process design. Explore guides, tutorials, and expert support.
+          </p>
+          <div className="relative max-w-xl mx-auto w-full mt-10 group">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 transition-colors group-hover:text-blue-500" />
+            <Input 
+              placeholder="Search for guides, shortcuts, or help..." 
+              className="pl-14 h-16 text-lg rounded-2xl shadow-xl shadow-blue-50/50 border-gray-100 bg-white/80 backdrop-blur-sm focus:ring-4 focus:ring-blue-100 transition-all"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
         </div>
 
-        {/* Contact / Support Sidebar */}
-        <div className="space-y-6">
-          <Card className="bg-blue-600 text-white border-none shadow-lg overflow-hidden relative">
-            <div className="absolute top-0 right-0 p-4 opacity-10">
-              <MessageCircle size={80} />
-            </div>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <MessageCircle className="h-5 w-5" />
-                Need more help?
-              </CardTitle>
-              <CardDescription className="text-blue-100">
-                Can't find what you're looking for? Our support team is here to help.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3 relative z-10">
-              <Dialog open={isContactDialogOpen} onOpenChange={setIsContactDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button className="w-full bg-white text-blue-600 hover:bg-blue-50 border-none font-semibold">
-                    Contact Support
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <form onSubmit={handleContactSubmit}>
-                    <DialogHeader>
-                      <DialogTitle>Contact Support</DialogTitle>
-                      <DialogDescription>
-                        Send us a message and we'll get back to you as soon as possible.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="subject">Subject</Label>
-                        <Input 
-                          id="subject" 
-                          placeholder="What do you need help with?" 
-                          required
-                          value={contactForm.subject}
-                          onChange={(e) => setContactForm({...contactForm, subject: e.target.value})}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="message">Message</Label>
-                        <Textarea 
-                          id="message" 
-                          placeholder="Describe your issue in detail..." 
-                          className="min-h-30"
-                          required
-                          value={contactForm.message}
-                          onChange={(e) => setContactForm({...contactForm, message: e.target.value})}
-                        />
-                      </div>
+        {/* Quick Access Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {categories.map((cat) => (
+            <Dialog key={cat.id}>
+              <DialogTrigger asChild>
+                <Card className="hover:shadow-2xl hover:-translate-y-1 transition-all cursor-pointer border-gray-100 bg-white/60 backdrop-blur-md rounded-3xl group overflow-hidden">
+                  <CardHeader className="p-8">
+                    <div className={cn("inline-flex p-3 rounded-2xl bg-white shadow-sm mb-4 transition-transform group-hover:scale-110", cat.color)}>
+                      <cat.icon className="h-8 w-8" />
                     </div>
-                    <DialogFooter>
-                      <DialogClose asChild>
-                        <Button type="button" variant="outline">Cancel</Button>
-                      </DialogClose>
-                      <Button type="submit">Send Message</Button>
-                    </DialogFooter>
-                  </form>
-                </DialogContent>
-              </Dialog>
-              <Button variant="outline" className="w-full bg-transparent border-blue-400 text-white hover:bg-blue-700">
-                View Documentation <ExternalLink className="ml-2 h-4 w-4" />
-              </Button>
-            </CardContent>
-          </Card>
+                    <CardTitle className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors">{cat.title}</CardTitle>
+                    <CardDescription className="text-gray-500 font-medium text-sm mt-1">{cat.description}</CardDescription>
+                  </CardHeader>
+                </Card>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-2xl border-none shadow-2xl rounded-3xl bg-white/95 backdrop-blur-xl">
+                <DialogHeader className="p-6">
+                  <DialogTitle className="flex items-center gap-4 text-3xl font-bold">
+                    <div className={cn("p-3 rounded-2xl bg-white shadow-md", cat.color)}>
+                      <cat.icon className="h-7 w-7" />
+                    </div>
+                    {cat.title}
+                  </DialogTitle>
+                  <DialogDescription className="text-base font-medium mt-2">{cat.description}</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-8 p-6">
+                  {cat.content.map((item, i) => (
+                    <div key={i} className="space-y-3 group/item">
+                      <h4 className="font-bold text-gray-900 text-lg flex items-center gap-3">
+                        <div className="w-6 h-6 rounded-lg bg-green-50 flex items-center justify-center">
+                          <CheckCircle2 size={14} className="text-green-600" />
+                        </div>
+                        {item.title}
+                      </h4>
+                      <p className="text-gray-500 text-base leading-relaxed pl-9 font-medium">{item.text}</p>
+                    </div>
+                  ))}
+                </div>
+                <DialogFooter className="p-6 border-t font-bold uppercase tracking-widest text-xs">
+                  <DialogClose asChild>
+                    <Button variant="ghost" className="rounded-2xl px-8 hover:bg-gray-50">Close Guide</Button>
+                  </DialogClose>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          ))}
+        </div>
+
+        {/* FAQs Section */}
+        <div className="mt-8">
+          <div className="space-y-8">
+            <div className="flex items-center justify-between border-b pb-4 border-gray-100">
+              <h2 className="text-3xl font-bold text-gray-900 italic">QUICK SOLUTIONS</h2>
+              <Badge className="bg-blue-50 text-blue-600 border-none font-bold px-4 py-1 text-xs">{filteredFaqs.length} ARTICLES</Badge>
+            </div>
+            
+            {filteredFaqs.length > 0 ? (
+              <Accordion type="single" collapsible className="w-full space-y-4">
+                {filteredFaqs.map((faq, index) => (
+                  <AccordionItem key={index} value={`item-${index}`} className="border-none rounded-2xl px-6 bg-white shadow-md shadow-gray-100/50 hover:shadow-xl hover:shadow-blue-50/50 transition-all overflow-hidden group">
+                    <AccordionTrigger className="text-left font-bold text-gray-800 hover:no-underline py-6 text-lg group-data-[state=open]:text-blue-600 transition-colors">
+                      {faq.question}
+                    </AccordionTrigger>
+                    <AccordionContent className="text-gray-500 pb-6 leading-relaxed font-medium text-base border-t border-gray-50 pt-4">
+                      {faq.answer}
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            ) : (
+              <div className="text-center py-20 bg-white shadow-inner rounded-3xl border-2 border-dashed border-gray-100">
+                <AlertCircle className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-xl font-bold text-gray-900 uppercase">Nothing Found</h3>
+                <p className="text-gray-400 font-medium">No results match your current query.</p>
+                <Button variant="link" onClick={() => setSearchQuery("")} className="mt-4 text-blue-600 font-bold uppercase tracking-widest text-xs underline">Back to All Guides</Button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
