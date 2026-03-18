@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowRight, FileText, Users, Shield, Zap, CheckCircle, Globe } from "lucide-react"
+import { ArrowRight, FileText, Users, Shield, Zap, CheckCircle, Globe, Cpu, Workflow, BarChart3, Layers, Cloud } from "lucide-react"
 import { DotPattern } from "@/components/magicui/dot-pattern"
 import { Particles } from "@/components/magicui/particles"
 import { BentoGrid, BentoCard } from "@/components/magicui/bento-grid"
@@ -10,70 +10,76 @@ import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
 
 const features = [
   {
-    Icon: FileText,
-    name: "Process Management",
-    description: "Design, version, and manage your FuSa processes with our intuitive drag-and-drop editor.",
+    Icon: Workflow,
+    name: "Interactive Process Modeling",
+    description: "Design, version, and manage your Functional Safety processes with our intuitive drag-and-drop editor.",
     href: "/dashboard/process",
     cta: "Start Designing",
     background: <div className="absolute -right-20 -top-20 opacity-60" />,
-    className: "lg:col-span-1 lg:row-span-1",
+    className: "lg:col-span-1 lg:row-span-1 border-blue-100/50",
   },
   {
     Icon: Users,
-    name: "Real-time Collaboration",
-    description: "Work together with your team in real-time. Assign roles, track changes, and communicate seamlessly.",
+    name: "Enterprise Collaboration",
+    description: "Sync with your team in real-time. Assign roles (Admin, Editor, Viewer), track changes, and manage project versioning seamlessly.",
     href: "/dashboard/projects",
     cta: "Invite Team",
     background: <div className="absolute -right-20 -top-20 opacity-60" />,
-    className: "lg:col-span-2 lg:row-span-1",
+    className: "lg:col-span-2 lg:row-span-1 border-purple-100/50",
   },
   {
     Icon: Shield,
-    name: "FuSa Compliance",
-    description: "Built-in templates and checks to ensure your projects meet ISO 26262 and other safety standards.",
+    name: "ISO 26262 Compliance",
+    description: "Ensure your safety lifecycle meets rigorous automotive standards with built-in templates and documentation workflows.",
     href: "/dashboard/help",
     cta: "Learn Standards",
     background: <div className="absolute -right-20 -top-20 opacity-60" />,
-    className: "lg:col-span-3 lg:row-span-1",
+    className: "lg:col-span-1 lg:row-span-1 border-pink-100/50",
+  },
+  {
+    Icon: Zap,
+    name: "Jira Integration",
+    description: "Automatically trigger Jira tickets from your process nodes. Connect your safety definitions directly to your engineering tasks.",
+    href: "/dashboard/settings",
+    cta: "Configure Sync",
+    background: <div className="absolute -right-20 -top-20 opacity-60" />,
+    className: "lg:col-span-1 lg:row-span-1 border-amber-100/50",
+  },
+  {
+    Icon: BarChart3,
+    name: "System Heartbeat",
+    description: "Monitor instance health and resource usage in real-time with centralized Pluto Admin connectivity.",
+    href: "/dashboard/settings",
+    cta: "View Health",
+    background: <div className="absolute -right-20 -top-20 opacity-60" />,
+    className: "lg:col-span-1 lg:row-span-1 border-green-100/50",
   },
 ];
 
 const reviews = [
   {
-    name: "Jack",
-    username: "@jack",
-    body: "I've never seen anything like this before. It's amazing. I love it.",
-    img: "https://avatar.vercel.sh/jack",
+    name: "Marcus Chen",
+    username: "@marcus_fusa",
+    body: "Pluto has completely transformed how we handle ISO 26262 audits. The versioning control is second to none.",
+    img: "https://avatar.vercel.sh/marcus",
   },
   {
-    name: "Jill",
-    username: "@jill",
-    body: "I don't know what to say. I'm speechless. This is amazing.",
-    img: "https://avatar.vercel.sh/jill",
+    name: "Elena Rodriguez",
+    username: "@elena_safety",
+    body: "The Jira integration is a game-changer. Our process definitions and engineering tasks are finally in sync.",
+    img: "https://avatar.vercel.sh/elena",
   },
   {
-    name: "John",
-    username: "@john",
-    body: "I'm at a loss for words. This is amazing. I love it.",
-    img: "https://avatar.vercel.sh/john",
+    name: "David Smith",
+    username: "@dsmith_auto",
+    body: "The visual editor is so intuitive. It was incredibly easy to migrate our legacy processes into Pluto.",
+    img: "https://avatar.vercel.sh/david",
   },
   {
-    name: "Jane",
-    username: "@jane",
-    body: "I'm at a loss for words. This is amazing. I love it.",
-    img: "https://avatar.vercel.sh/jane",
-  },
-  {
-    name: "Jenny",
-    username: "@jenny",
-    body: "I'm at a loss for words. This is amazing. I love it.",
-    img: "https://avatar.vercel.sh/jenny",
-  },
-  {
-    name: "James",
-    username: "@james",
-    body: "I'm at a loss for words. This is amazing. I love it.",
-    img: "https://avatar.vercel.sh/james",
+    name: "Sarah Kim",
+    username: "@skim_safety",
+    body: "The Pluto Admin dashboard gives us full visibility into our organization''s license and system health.",
+    img: "https://avatar.vercel.sh/sarah",
   },
 ];
 
@@ -94,228 +100,274 @@ const ReviewCard = ({
   return (
     <figure
       className={cn(
-        "relative w-64 cursor-pointer overflow-hidden rounded-xl border p-4",
-        // light styles
-        "border-gray-950/10 bg-gray-950/1 hover:bg-gray-950/5",
+        "relative w-64 cursor-pointer overflow-hidden rounded-2xl border p-6 m-2",
+        "border-slate-100 bg-white hover:bg-slate-50 hover:shadow-md transition-all duration-300",
       )}
     >
-      <div className="flex flex-row items-center gap-2">
-        <img className="rounded-full" width="32" height="32" alt="" src={img} />
+      <div className="flex flex-row items-center gap-3">
+        <img className="rounded-full shadow-sm" width="40" height="40" alt="" src={img} />
         <div className="flex flex-col">
-          <figcaption className="text-sm font-medium dark:text-white">
+          <figcaption className="text-sm font-bold text-slate-900">
             {name}
           </figcaption>
-          <p className="text-xs font-medium dark:text-white/40">{username}</p>
+          <p className="text-xs font-medium text-slate-400">{username}</p>
         </div>
       </div>
-      <blockquote className="mt-2 text-sm">{body}</blockquote>
+      <blockquote className="mt-4 text-sm leading-relaxed text-slate-600">{body}</blockquote>
     </figure>
   );
 };
 
 export default function LandingPage() {
   return (
-    <div className="flex min-h-screen flex-col relative overflow-hidden bg-white">
-      {/* Background Elements */}
-      <DotPattern
-        width={20}
-        height={20}
-        cx={1}
-        cy={1}
-        cr={1}
-        className={cn(
-          "[mask-image:linear-gradient(to_bottom_right,white,transparent,transparent)] opacity-50"
-        )}
-      />
-      <Particles
-        className="absolute inset-0 z-0"
-        quantity={100}
-        ease={80}
-        color="#000000"
-        refresh
-      />
-
-      {/* Navbar */}
-      <header className="flex h-20 items-center justify-between border-b px-6 lg:px-12 bg-white/80 backdrop-blur-md z-50 sticky top-0">
-        <div className="flex items-center gap-3 group cursor-pointer">
-            <div className="relative">
-              <div className="absolute -inset-1 bg-linear-to-r from-blue-600 to-purple-600 rounded-xl blur-sm opacity-25 group-hover:opacity-50 transition-opacity duration-300" />
-              <div className="relative w-10 h-10 bg-linear-to-br from-blue-600 via-blue-700 to-purple-700 rounded-xl flex items-center justify-center text-white font-extrabold text-xl shadow-lg border border-white/20">
-                <span>P</span>
+    <div className="flex min-h-screen flex-col bg-white overflow-hidden scroll-smooth">
+      <nav className="fixed top-0 z-50 w-full border-b bg-white/80 transition-all duration-300 backdrop-blur-md">
+        <div className="container mx-auto flex h-20 items-center justify-between px-6 lg:px-12">
+          <div className="flex items-center gap-3">
+            <div className="relative group">
+              <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl blur-sm opacity-25 group-hover:opacity-50 transition-opacity duration-300" />
+              <div className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 font-bold text-white shadow-lg border border-white/20">
+                P
               </div>
             </div>
             <div className="flex flex-col leading-none">
-              <span className="text-2xl font-black tracking-tighter text-gray-900 bg-clip-text text-transparent bg-linear-to-r from-gray-900 to-gray-600">
-                Pluto
+              <span className="text-2xl font-black tracking-tighter text-slate-900">
+                PLUTO<span className="text-blue-600">.</span>
               </span>
               <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600/80 mt-0.5">
-                Design
+                SAFETY ENGINE
               </span>
             </div>
-        </div>
-        <nav className="flex gap-6 items-center">
-          <Link href="#features" className="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors">
-            Features
-          </Link>
-          <Link href="#testimonials" className="text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors">
-            Testimonials
-          </Link>
-          <SignedOut>
-            <Button variant="ghost" className="text-gray-700 hover:text-blue-600" asChild>
-              <Link href="/sign-in">Login</Link>
-            </Button>
-            <Button className="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6" asChild>
-              <Link href="/sign-up">Get Started</Link>
-            </Button>
-          </SignedOut>
-          <SignedIn>
-            <Button variant="ghost" className="text-gray-700 hover:text-blue-600" asChild>
-              <Link href="/dashboard/process">Process</Link>
-            </Button>
-            <UserButton />
-          </SignedIn>
-        </nav>
-      </header>
-
-      <main className="flex-1 z-10">
-        {/* Hero Section */}
-        <section className="relative pt-20 pb-32 px-6 lg:px-12 flex flex-col items-center text-center">
+          </div>
           
-          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-gray-900 mb-6 max-w-4xl">
-            Streamline Your <br />
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600">
-              FuSa Processes
-            </span>
-          </h1>
-          
-          <p className="text-xl text-gray-600 max-w-2xl mb-10 leading-relaxed">
-            The all-in-one platform for Functional Safety management. Design processes, collaborate with your team, and ensure compliance with ISO 26262 effortlessly.
-          </p>
-          
-          <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+          <div className="flex items-center gap-6">
+            <nav className="hidden md:flex items-center gap-8 mr-4">
+              <Link href="#features" className="text-sm font-semibold text-slate-600 hover:text-blue-600 transition-colors">Features</Link>
+              <Link href="#testimonials" className="text-sm font-semibold text-slate-600 hover:text-blue-600 transition-colors">Compliance</Link>
+              <Link href="/dashboard/help" className="text-sm font-semibold text-slate-600 hover:text-blue-600 transition-colors">Docs</Link>
+            </nav>
+            <div className="h-6 w-[1px] bg-slate-200 hidden md:block mr-2" />
             <SignedOut>
-              <Button size="lg" className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-full px-8 h-12 text-lg shadow-lg hover:shadow-xl transition-all" asChild>
-                <Link href="/sign-up">
-                  Start for Free <ArrowRight className="ml-2 h-5 w-5" />
-                </Link>
-              </Button>
+              <Link href="/sign-in">
+                <Button variant="ghost" className="hidden sm:inline-flex font-bold text-slate-700 hover:bg-slate-100">Sign In</Button>
+              </Link>
+              <Link href="/sign-up">
+                <Button className="bg-blue-600 text-white hover:bg-blue-700 shadow-xl shadow-blue-200/50 px-6 rounded-full font-bold">Get Started</Button>
+              </Link>
             </SignedOut>
             <SignedIn>
-              <Button size="lg" className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-full px-8 h-12 text-lg shadow-lg hover:shadow-xl transition-all" asChild>
-                <Link href="/dashboard/process">
-                  Go to Process <ArrowRight className="ml-2 h-5 w-5" />
-                </Link>
-              </Button>
-            </SignedIn>
-            <Button size="lg" variant="outline" className="w-full sm:w-auto rounded-full px-8 h-12 text-lg border-gray-300 hover:bg-gray-50" asChild>
-              <Link href="#features">
-                View Demo
+              <Link href="/dashboard">
+                <Button variant="ghost" className="font-bold text-slate-700 hover:bg-slate-100">Dashboard</Button>
               </Link>
-            </Button>
+              <UserButton afterSignOutUrl="/" />
+            </SignedIn>
           </div>
+        </div>
+      </nav>
 
-          {/* Hero Image / Dashboard Preview */}
-          <div className="mt-20 relative w-full max-w-5xl mx-auto rounded-xl border bg-white/50 shadow-2xl overflow-hidden backdrop-blur-sm p-2">
-             <div className="rounded-lg overflow-hidden border bg-gray-50 aspect-[16/9] flex items-center justify-center relative group">
-                <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/10 to-purple-500/10 z-0"></div>
-                {/* Placeholder for dashboard screenshot */}
-                {/* <div className="z-10 text-center">
-                    <div className="w-20 h-20 bg-white rounded-2xl shadow-lg mx-auto mb-4 flex items-center justify-center">
-                        <Zap className="w-10 h-10 text-yellow-500" />
-                    </div>
-                    <p className="text-gray-500 font-medium">Interactive Dashboard Preview</p>
-                </div> */}
-                <img src={"/D-D.png"} alt="Dashboard Preview" className="w-full h-full object-cover z-10" />
-             </div>
+      <main className="flex-1 pt-20">
+        <section className="relative overflow-hidden py-24 md:py-40 flex items-center justify-center min-h-[90vh]">
+          <DotPattern
+            width={24}
+            height={24}
+            cx={1}
+            cy={1}
+            cr={1}
+            className={cn(
+              "[mask-image:radial-gradient(ellipse_at_center,white,transparent)] opacity-40",
+            )}
+          />
+          <Particles 
+            className="absolute inset-0 z-0 pointer-events-none"
+            quantity={120}
+            staticity={30}
+            color="#2563eb"
+          />
+          
+          <div className="container relative z-10 px-6 lg:px-12 text-center">
+            <div className="mb-10 flex justify-center animate-in fade-in slide-in-from-bottom-4 duration-1000">
+              <div className="inline-flex items-center rounded-full border border-blue-100 bg-blue-50/50 px-4 py-1.5 text-sm font-bold text-blue-700 backdrop-blur-sm shadow-sm">
+                <span className="flex h-2 w-2 rounded-full bg-blue-600 mr-2 animate-pulse"></span>
+                v2.4: Jira Automation & Admin Console
+              </div>
+            </div>
+            
+            <h1 className="mx-auto max-w-5xl text-5xl font-black tracking-tight text-slate-900 sm:text-8xl leading-[1.05] animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-200">
+              Engineering <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent italic">Trust</span> in <br className="hidden md:block" />
+              Functional Safety.
+            </h1>
+            
+            <p className="mx-auto mt-10 max-w-2xl text-lg text-slate-600 md:text-2xl leading-relaxed font-medium animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-300">
+              Pluto bridges the gap between safety requirements and engineering execution with ISO 26262 native workflows and real-time collaboration.
+            </p>
+            
+            <div className="mt-14 flex flex-col items-center justify-center gap-6 sm:flex-row animate-in fade-in slide-in-from-bottom-16 duration-1000 delay-500">
+              <Link href="/dashboard">
+                <Button size="xl" className="h-16 px-10 bg-blue-600 text-white hover:bg-blue-700 shadow-2xl shadow-blue-200/60 text-xl font-bold group rounded-2xl transition-all hover:scale-105 active:scale-95">
+                  Get Started for Free
+                  <ArrowRight className="ml-2 h-6 w-6 transition-transform group-hover:translate-x-1" />
+                </Button>
+              </Link>
+              <Button size="xl" variant="outline" className="h-16 px-10 border-slate-200 text-slate-700 hover:bg-slate-50 text-xl font-bold rounded-2xl bg-white/50 backdrop-blur-sm transition-all hover:scale-105">
+                Book a Demo
+              </Button>
+            </div>
+            
+            <div className="mt-28 relative max-w-6xl mx-auto group animate-in zoom-in-95 duration-1000 delay-700">
+              <div className="absolute -inset-1 bg-gradient-to-r from-blue-500/20 to-indigo-500/20 rounded-[2.5rem] blur-2xl opacity-50 transition-opacity duration-500 group-hover:opacity-100" />
+              <div className="relative rounded-[2rem] border-8 border-slate-900 p-2 shadow-2xl bg-slate-950 overflow-hidden">
+                <img 
+                  src="/D-D.png" 
+                  alt="Pluto Dashboard" 
+                  className="rounded-2xl w-full h-auto object-cover opacity-90 group-hover:opacity-100 transition-opacity duration-500" 
+                />
+              </div>
+            </div>
+            
+            <div className="mt-32 pt-12 border-t border-slate-100 flex flex-col items-center">
+              <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 mb-10">Supporting Enterprise Safety Standards</p>
+              <div className="flex flex-wrap justify-center gap-12 md:gap-20 opacity-30 grayscale transition-all duration-500 hover:grayscale-0 hover:opacity-60">
+                <div className="flex items-center gap-2"><Cpu className="h-8 w-8" /><span className="font-bold text-xl">ASIL-D</span></div>
+                <div className="flex items-center gap-2"><Workflow className="h-8 w-8" /><span className="font-bold text-xl">ISO 26262</span></div>
+                <div className="flex items-center gap-2"><Globe className="h-8 w-8" /><span className="font-bold text-xl">IEC 61508</span></div>
+                <div className="flex items-center gap-2"><Layers className="h-8 w-8" /><span className="font-bold text-xl">AUTOMOTIVE SPICE</span></div>
+              </div>
+            </div>
           </div>
         </section>
 
-        {/* Features Section */}
-        <section id="features" className="py-24 px-6 lg:px-12 bg-gray-50/50">
-          <div className="max-w-6xl mx-auto">
-            <div className="text-center mb-16">
-                <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Everything you need to succeed</h2>
-                <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-                    Powerful features designed to help you manage complex safety lifecycles with ease and precision.
-                </p>
+        <section id="features" className="bg-slate-50 py-24 md:py-40 overflow-hidden relative">
+          <div className="container px-6 lg:px-12">
+            <div className="mb-24 text-center max-w-3xl mx-auto">
+              <h2 className="text-blue-600 font-black text-xs tracking-[0.3em] uppercase mb-5">System Architecture</h2>
+              <h3 className="text-4xl font-black tracking-tight text-slate-900 sm:text-6xl leading-[1.1]">
+                Modern engineering requires modern tools.
+              </h3>
+              <p className="mt-8 text-xl text-slate-600 font-medium leading-relaxed">
+                Pluto isn''t just a dashboard - it''s a system of record for your entire functional safety lifecycle (FuSa).
+              </p>
             </div>
-            
-            <BentoGrid className="lg:grid-rows-2">
+            <BentoGrid className="grid-cols-1 md:grid-cols-3 gap-8">
               {features.map((feature) => (
-                <BentoCard key={feature.name} {...feature} />
+                <BentoCard 
+                  key={feature.name} 
+                  {...feature} 
+                  className={cn(
+                    feature.className, 
+                    "group bg-white hover:shadow-2xl hover:-translate-y-1 transition-all duration-500 border-none shadow-sm rounded-[2rem]"
+                  )} 
+                />
               ))}
             </BentoGrid>
           </div>
         </section>
 
-        {/* Testimonials Section */}
-        <section id="testimonials" className="py-24 px-6 lg:px-12 overflow-hidden">
-            <div className="text-center mb-12">
-                <h2 className="text-3xl font-bold text-gray-900">Trusted by Safety Experts</h2>
+        <section id="testimonials" className="py-24 md:py-40 bg-white">
+          <div className="container px-6 lg:px-12">
+            <div className="mb-20 text-center">
+              <h3 className="text-4xl font-black tracking-tighter text-slate-900 sm:text-5xl">
+                The New Standard in Safety <br className="hidden sm:block" /> Engineering Excellence.
+              </h3>
             </div>
-            <div className="relative flex h-[300px] w-full flex-col items-center justify-center overflow-hidden rounded-lg">
-                <Marquee pauseOnHover className="[--duration:20s]">
-                    {firstRow.map((review) => (
-                    <ReviewCard key={review.username} {...review} />
-                    ))}
-                </Marquee>
-                <Marquee reverse pauseOnHover className="[--duration:20s]">
-                    {secondRow.map((review) => (
-                    <ReviewCard key={review.username} {...review} />
-                    ))}
-                </Marquee>
-                <div className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-white dark:from-background"></div>
-                <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-gradient-to-l from-white dark:from-background"></div>
+            <div className="relative flex min-h-[22rem] w-full flex-col items-center justify-center overflow-hidden rounded-[3rem] border border-slate-100 bg-slate-50/50 p-4 md:shadow-inner">
+              <Marquee pauseOnHover className="[--duration:30s]">
+                {reviews.map((review) => (
+                  <ReviewCard key={review.username} {...review} />
+                ))}
+              </Marquee>
+              <Marquee reverse pauseOnHover className="[--duration:25s] mt-6">
+                {reviews.map((review) => (
+                  <ReviewCard key={review.username} {...review} />
+                ))}
+              </Marquee>
+              <div className="pointer-events-none absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-slate-50/80"></div>
+              <div className="pointer-events-none absolute inset-y-0 right-0 w-1/4 bg-gradient-to-l from-slate-50/80"></div>
             </div>
+          </div>
         </section>
 
-        {/* CTA Section */}
-        <section className="py-24 px-6 lg:px-12 bg-gray-900 text-white relative overflow-hidden">
-            <Particles
-                className="absolute inset-0 z-0 opacity-30"
-                quantity={50}
+        <section className="py-24 md:py-40 px-6">
+          <div className="container max-w-6xl mx-auto">
+            <div className="relative overflow-hidden bg-slate-900 rounded-[3rem] py-20 px-10 text-center shadow-3xl">
+              <Particles 
+                className="absolute inset-0 z-0 opacity-20"
+                quantity={80}
                 color="#ffffff"
-                refresh
-            />
-            <div className="max-w-4xl mx-auto text-center relative z-10">
-                <h2 className="text-4xl font-bold mb-6">Ready to transform your workflow?</h2>
-                <p className="text-xl text-gray-300 mb-10">
-                    Join thousands of engineers who trust Pluto for their Functional Safety management.
+              />
+              <div className="relative z-10">
+                <h2 className="text-4xl md:text-6xl font-black text-white mb-8 tracking-tight">
+                  Ready to secure your <br /> next ISO audit?
+                </h2>
+                <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-12 font-medium">
+                  Join industry leaders who have switched to Pluto to automate their safety lifecycle management.
                 </p>
-                <SignedOut>
-                    <Button size="lg" className="bg-white text-gray-900 hover:bg-gray-100 rounded-full px-8 h-12 text-lg font-semibold" asChild>
-                        <Link href="/sign-up">
-                            Get Started Now
-                        </Link>
+                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                  <Link href="/dashboard">
+                    <Button size="xl" className="h-16 px-10 bg-white text-slate-900 hover:bg-slate-100 text-xl font-bold rounded-2xl shadow-xl transition-transform hover:scale-105">
+                      Get Started Now
                     </Button>
-                </SignedOut>
-                <SignedIn>
-                    <Button size="lg" className="bg-white text-gray-900 hover:bg-gray-100 rounded-full px-8 h-12 text-lg font-semibold" asChild>
-                        <Link href="/dashboard/process">
-                            Go to Process
-                        </Link>
-                    </Button>
-                </SignedIn>
+                  </Link>
+                  <Button size="xl" variant="outline" className="h-16 px-10 border-slate-700 text-white hover:bg-slate-800 text-xl font-bold rounded-2xl transition-transform hover:scale-105">
+                    Contact Sales
+                  </Button>
+                </div>
+              </div>
             </div>
+          </div>
         </section>
-      </main>
 
-      <footer className="py-12 px-6 lg:px-12 border-t bg-white">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="flex items-center gap-2">
-                <div className="w-6 h-6 bg-gray-900 rounded flex items-center justify-center text-white text-xs font-bold">P</div>
-                <span className="font-bold text-gray-900">Pluto</span>
+        <footer className="border-t border-slate-100 bg-slate-50 py-20">
+          <div className="container px-6 lg:px-12">
+            <div className="flex flex-col md:flex-row justify-between gap-12">
+              <div className="flex flex-col gap-6 max-w-xs transition-opacity hover:opacity-100">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 font-bold text-white shadow-lg">
+                    P
+                  </div>
+                  <span className="text-xl font-black text-slate-900">PLUTO</span>
+                </div>
+                <p className="text-sm font-medium text-slate-500 leading-relaxed">
+                  The Enterprise Operating System for Functional Safety Management and Compliance.
+                </p>
+                <div className="flex gap-4">
+                  <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer italic font-black">X</div>
+                  <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer italic font-black">in</div>
+                  <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer italic font-black">gh</div>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-12 md:gap-24">
+                <div className="flex flex-col gap-4">
+                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Product</h4>
+                  <Link href="/dashboard" className="text-sm font-semibold text-slate-500 hover:text-blue-600">Platform</Link>
+                  <Link href="#features" className="text-sm font-semibold text-slate-500 hover:text-blue-600">Features</Link>
+                  <Link href="/dashboard/settings" className="text-sm font-semibold text-slate-500 hover:text-blue-600">Jira Sync</Link>
+                </div>
+                <div className="flex flex-col gap-4">
+                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Resources</h4>
+                  <Link href="/dashboard/help" className="text-sm font-semibold text-slate-500 hover:text-blue-600">Documentation</Link>
+                  <Link href="/dashboard/settings" className="text-sm font-semibold text-slate-500 hover:text-blue-600">Admin API</Link>
+                  <Link href="/dashboard/help" className="text-sm font-semibold text-slate-500 hover:text-blue-600">Tutorials</Link>
+                </div>
+                <div className="flex flex-col gap-4">
+                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Company</h4>
+                  <Link href="#" className="text-sm font-semibold text-slate-500 hover:text-blue-600">Privacy</Link>
+                  <Link href="#" className="text-sm font-semibold text-slate-500 hover:text-blue-600">Terms</Link>
+                  <Link href="/dashboard/settings" className="text-sm font-semibold text-slate-500 hover:text-blue-600">Security</Link>
+                </div>
+              </div>
             </div>
-            <div className="flex gap-8 text-sm text-gray-500">
-                <Link href="#" className="hover:text-gray-900">Privacy Policy</Link>
-                <Link href="#" className="hover:text-gray-900">Terms of Service</Link>
-                <Link href="#" className="hover:text-gray-900">Contact</Link>
+            
+            <div className="mt-20 pt-8 border-t border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
+              <p className="text-xs font-bold text-slate-400"> 2024 Pluto Safety Systems. Built for the future of mobility.</p>
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-green-500" />
+                <span className="text-xs font-bold text-slate-500">All systems operational</span>
+              </div>
             </div>
-            <div className="text-sm text-gray-400">
-                © 2025 Pluto Inc. All rights reserved.
-            </div>
-        </div>
-      </footer>
+          </div>
+        </footer>
+      </main>
     </div>
-  )
+  );
 }

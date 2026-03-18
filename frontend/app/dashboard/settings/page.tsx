@@ -11,7 +11,7 @@ import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Progress } from "@/components/ui/progress"
 import { toast } from "sonner"
-import { Loader2, User, Shield, Building, Mail, Bell, Moon, Sun, Globe, Smartphone, Lock, Trash2, Download, Database, FileArchive, Clock, Settings2 } from "lucide-react"
+import { Loader2, User, Shield, Building, Mail, Bell, Moon, Sun, Globe, Smartphone, Lock, Trash2, Download, Database, FileArchive, Clock, Settings2, Brain, Key, ExternalLink } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export default function SettingsPage() {
@@ -22,6 +22,10 @@ export default function SettingsPage() {
   const [backupProgress, setBackupProgress] = useState(0)
   const [lastBackup, setLastBackup] = useState<string | null>(null)
   const [darkMode, setDarkMode] = useState(false)
+
+  // Mind Controller State
+  const [mindControllerPassword, setMindControllerPassword] = useState("")
+  const [isMindControllerUnlocked, setIsMindControllerUnlocked] = useState(false)
 
   // JIRA Config State
   const [jiraUrl, setJiraUrl] = useState("")
@@ -34,6 +38,16 @@ export default function SettingsPage() {
       fetchJiraConfig()
     }
   }, [role])
+
+  const handleMindControllerUnlock = () => {
+    if (mindControllerPassword === "pavilion@360") {
+      setIsMindControllerUnlocked(true)
+      toast.success("Mind Controller Unlocked Access Granted")
+    } else {
+      toast.error("Invalid Mind Controller Password")
+      setMindControllerPassword("")
+    }
+  }
 
   const fetchJiraConfig = async () => {
     try {
@@ -144,7 +158,10 @@ export default function SettingsPage() {
             <TabsList className="bg-muted/50 p-1 border">
               <TabsTrigger value="profile" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-8">Profile</TabsTrigger>
               {role === 'admin' && (
-                <TabsTrigger value="jira" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-8">JIRA Config</TabsTrigger>
+                <>
+                  <TabsTrigger value="jira" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-8">JIRA Config</TabsTrigger>
+                  <TabsTrigger value="mind-controller" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-8">Mind Controller</TabsTrigger>
+                </>
               )}
               <TabsTrigger value="backup" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-8">Backup</TabsTrigger>
               <TabsTrigger value="security" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-8">Security</TabsTrigger>
@@ -217,65 +234,162 @@ export default function SettingsPage() {
           </TabsContent>
 
           {role === 'admin' && (
-            <TabsContent value="jira" className="outline-none mt-0">
-              <Card className="shadow-sm border-gray-200">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-xl">
-                    <Settings2 className="w-5 h-5 text-indigo-600" />
-                    JIRA Integration
-                  </CardTitle>
-                  <CardDescription>Configure your organization&apos;s JIRA workspace settings.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6 pt-4">
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="jiraUrl">JIRA URL</Label>
-                      <Input 
-                        id="jiraUrl" 
-                        value={jiraUrl} 
-                        onChange={(e) => setJiraUrl(e.target.value)}
-                        placeholder="https://your-org.atlassian.net" 
-                        className="focus-visible:ring-indigo-500" 
-                      />
-                      <p className="text-[12px] text-muted-foreground italic">Your organization&apos;s Atlassian JIRA instance URL.</p>
+            <>
+              <TabsContent value="jira" className="outline-none mt-0">
+                <Card className="shadow-sm border-gray-200">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-xl">
+                      <Settings2 className="w-5 h-5 text-indigo-600" />
+                      JIRA Integration
+                    </CardTitle>
+                    <CardDescription>Configure your organization&apos;s JIRA workspace settings.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6 pt-4">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="jiraUrl">JIRA URL</Label>
+                        <Input 
+                          id="jiraUrl" 
+                          value={jiraUrl} 
+                          onChange={(e) => setJiraUrl(e.target.value)}
+                          placeholder="https://your-org.atlassian.net" 
+                          className="focus-visible:ring-indigo-500" 
+                        />
+                        <p className="text-[12px] text-muted-foreground italic">Your organization&apos;s Atlassian JIRA instance URL.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="jiraEmail">Admin Email</Label>
+                        <Input 
+                          id="jiraEmail" 
+                          value={jiraEmail}
+                          onChange={(e) => setJiraEmail(e.target.value)}
+                          placeholder="admin@example.com" 
+                          className="focus-visible:ring-indigo-500" 
+                        />
+                        <p className="text-[12px] text-muted-foreground italic">The email address associated with your JIRA API Token.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="jiraToken">JIRA API Token</Label>
+                        <Input 
+                          id="jiraToken" 
+                          type="password"
+                          value={jiraApiToken}
+                          onChange={(e) => setJiraApiToken(e.target.value)}
+                          placeholder="••••••••••••••••••••••••" 
+                          className="focus-visible:ring-indigo-500 font-mono text-sm" 
+                        />
+                        <p className="text-[12px] text-muted-foreground italic">Your secure JIRA API token. Can be generated in Atlassian account settings.</p>
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="jiraEmail">Admin Email</Label>
-                      <Input 
-                        id="jiraEmail" 
-                        value={jiraEmail}
-                        onChange={(e) => setJiraEmail(e.target.value)}
-                        placeholder="admin@example.com" 
-                        className="focus-visible:ring-indigo-500" 
-                      />
-                      <p className="text-[12px] text-muted-foreground italic">The email address associated with your JIRA API Token.</p>
+                    <div className="pt-4 flex justify-end">
+                      <Button 
+                        onClick={handleSaveJira} 
+                        disabled={isSavingJira}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white min-w-[150px]"
+                      >
+                        {isSavingJira ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Lock className="w-4 h-4 mr-2" />}
+                        Save JIRA Config
+                      </Button>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="jiraToken">JIRA API Token</Label>
-                      <Input 
-                        id="jiraToken" 
-                        type="password"
-                        value={jiraApiToken}
-                        onChange={(e) => setJiraApiToken(e.target.value)}
-                        placeholder="••••••••••••••••••••••••" 
-                        className="focus-visible:ring-indigo-500 font-mono text-sm" 
-                      />
-                      <p className="text-[12px] text-muted-foreground italic">Your secure JIRA API token. Can be generated in Atlassian account settings.</p>
-                    </div>
-                  </div>
-                  <div className="pt-4 flex justify-end">
-                    <Button 
-                      onClick={handleSaveJira} 
-                      disabled={isSavingJira}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white min-w-[150px]"
-                    >
-                      {isSavingJira ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Lock className="w-4 h-4 mr-2" />}
-                      Save JIRA Config
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="mind-controller" className="outline-none mt-0">
+                <Card className="shadow-sm border-red-100 overflow-hidden">
+                  <div className="h-1 bg-red-500 w-full" />
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-xl text-red-700">
+                      <Brain className="w-5 h-5" />
+                      Mind Controller
+                    </CardTitle>
+                    <CardDescription>Restricted system administration and core connection parameters.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6 pt-4">
+                    {!isMindControllerUnlocked ? (
+                      <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                        <div className="bg-red-50 p-4 rounded-full">
+                          <Lock className="w-12 h-12 text-red-500" />
+                        </div>
+                        <div className="text-center space-y-2">
+                          <h3 className="text-lg font-bold text-gray-900">Secure Access Required</h3>
+                          <p className="text-sm text-gray-500 max-w-sm">
+                            This area contains highly sensitive system-level configurations. Enter the master password to continue.
+                          </p>
+                        </div>
+                        <div className="flex w-full max-w-xs items-center space-x-2">
+                          <Input 
+                            type="password" 
+                            placeholder="Enter Password" 
+                            value={mindControllerPassword}
+                            onChange={(e) => setMindControllerPassword(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleMindControllerUnlock()}
+                            className="focus-visible:ring-red-500"
+                          />
+                          <Button 
+                            onClick={handleMindControllerUnlock}
+                            className="bg-red-600 hover:bg-red-700"
+                          >
+                            Unlock
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
+                        <div className="rounded-xl border border-red-200 bg-red-50/30 p-6 space-y-4">
+                          <div className="flex items-center justify-between">
+                             <div className="flex items-center gap-2 font-bold text-red-800">
+                                <ExternalLink className="w-5 h-5" />
+                                Pluto Admin Connection
+                             </div>
+                             <div className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-mono uppercase tracking-widest">Connected</div>
+                          </div>
+                          
+                          <Separator className="bg-red-200/50" />
+                          
+                          <div className="space-y-4 font-mono text-sm leading-relaxed">
+                            <div className="space-y-2">
+                              <Label className="text-red-900 font-bold flex items-center gap-2">
+                                 <Key className="w-4 h-4" />
+                                 ADMIN_SUPABASE_URL
+                              </Label>
+                              <div className="p-3 bg-gray-900 text-green-400 rounded-md border border-gray-800 break-all">
+                                https://huktyufeaiuhobamefpg.supabase.co
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <Label className="text-red-900 font-bold flex items-center gap-2">
+                                 <Key className="w-4 h-4" />
+                                 ADMIN_SUPABASE_KEY
+                              </Label>
+                              <div className="p-3 bg-gray-900 text-gray-300 rounded-md border border-gray-800 break-all select-all">
+                                eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh1a3R5dWZlYWl1aG9iYW1lZnBnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQ5NDQ3OSwiZXhwIjoyMDg1MDcwNDc5fQ.cBJXI0Mc3nnaTcjCWn073JJFd1j6XgX96SNA1uW-z50
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="text-[12px] text-red-700/70 italic flex items-center gap-2">
+                             <Shield className="w-3 h-3" />
+                             These keys establish the core trust relationship between this instance and the central Pluto control plane.
+                          </div>
+                        </div>
+                        
+                        <div className="flex justify-end">
+                          <Button 
+                            variant="ghost" 
+                            onClick={() => setIsMindControllerUnlocked(false)}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            Lock Area
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </>
           )}
 
           <TabsContent value="backup" className="space-y-6 outline-none mt-0 animate-in slide-in-from-left-2 duration-300">
@@ -375,17 +489,17 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between group">
                   <div className="space-y-0.5">
                     <Label className="font-bold text-red-900">Sign out from all devices</Label>
-                    <p className="text-sm text-muted-foreground italic text-red-700/60">Log out of every active session across all browsers.</p>
+                    <p className="text-sm italic text-red-700/60 font-medium">Log out of every active session across all browsers.</p>
                   </div>
-                  <Button variant="outline" className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 transition-all">Sign Out All</Button>
+                  <Button variant="outline" className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 transition-all font-semibold">Sign Out All</Button>
                 </div>
-                <Separator className="bg-red-100" />
+                <Separator className="bg-red-100/50" />
                 <div className="flex items-center justify-between group">
                   <div className="space-y-0.5">
                     <Label className="font-bold text-red-900 underline decoration-red-200">Deactivate Account</Label>
-                    <p className="text-sm text-muted-foreground italic text-red-700/60 font-medium">Permanently delete your profile and project contributions.</p>
+                    <p className="text-sm italic text-red-700/60 font-medium font-medium">Permanently delete your profile and project contributions.</p>
                   </div>
-                  <Button variant="destructive" className="bg-red-600 hover:bg-red-700 shadow-sm transition-all active:scale-95 flex gap-2">
+                  <Button variant="destructive" className="bg-red-600 hover:bg-red-700 shadow-sm transition-all active:scale-95 flex gap-2 font-bold">
                     <Trash2 className="w-4 h-4" />
                     Delete Account
                   </Button>

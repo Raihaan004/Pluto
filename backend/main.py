@@ -344,8 +344,8 @@ def health_check(db: Session = Depends(get_db)):
         }
 
 
-@app.post("/verify-license")
-async def verify_and_setup_instance(data: LicenseVerify, db: Session = Depends(get_db)):
+@app.post("/verify-license-legacy")
+async def verify_and_setup_instance_legacy(data: LicenseVerify, db: Session = Depends(get_db)):
     """
     Connects to Pluto Admin to verify license and organization details.
     If valid, stores the configuration in the local database.

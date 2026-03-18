@@ -138,11 +138,14 @@ def sync_task_to_jira(node_data, metadata, user_map=None):
 
 def create_connection_jira_ticket(activity_data, work_product_data, metadata, user_map=None):
     jira = get_jira_client()
-    if not jira or not JIRA_PROJECT_KEY:
+    # Use jira_project_key from metadata if available, otherwise fallback to env
+    jira_project_key = metadata.get('jira_project_key') or os.environ.get("JIRA_PROJECT_KEY")
+
+    if not jira or not jira_project_key:
         return None
 
     user_map = user_map or {}
-    project_key = JIRA_PROJECT_KEY.split('#')[0].strip()
+    project_key = jira_project_key.split('#')[0].strip()
     project_name = metadata.get('project_name', 'Unknown Project')
     project_id = metadata.get('project_id')
     project_type = metadata.get('project_type', 'freestyle')
