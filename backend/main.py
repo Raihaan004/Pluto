@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Header, Query, BackgroundTasks, Depe
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 import os
 import asyncio
 import zipfile
@@ -329,7 +330,7 @@ def health_check(db: Session = Depends(get_db)):
     """Health check endpoint to verify database connection"""
     try:
         # Try a simple query to verify database connection
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         return {
             "status": "healthy",
             "db_connected": True,

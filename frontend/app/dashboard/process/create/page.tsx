@@ -296,11 +296,11 @@ const ProcessCanvas = ({
       if (isReadOnly) return;
       saveHistory();
 
-      const type = event.dataTransfer.getData('application/reactflow');
+      const nodeType = event.dataTransfer.getData('application/reactflow');
       const label = event.dataTransfer.getData('application/reactflow/label');
 
       // check if the dropped element is valid
-      if (typeof type === 'undefined' || !type) {
+      if (typeof nodeType === 'undefined' || !nodeType) {
         return;
       }
 
@@ -308,17 +308,25 @@ const ProcessCanvas = ({
       // fallback for older versions or if instance not ready
       if (!reactFlowInstance) return;
 
-      const position = reactFlowInstance.screenToFlowPosition({
+      let position = reactFlowInstance.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       });
+
+      // Constraint for table mode: only allow drops in Column A
+      if (type === 'table') {
+        const columnAWidth = columnWidths[0] || 400;
+        const minX = ROW_LABEL_WIDTH + 10;
+        const maxX = ROW_LABEL_WIDTH + columnAWidth - 50;
+        position.x = Math.max(minX, Math.min(position.x, maxX));
+      }
       
       const newNode = {
         id: getId(),
-        type,
+        type: nodeType,
         position,
-        data: { label: label || `${type} node` },
-        style: type === 'decision' ? { width: 150, height: 150 } : undefined,
+        data: { label: label || `${nodeType} node` },
+        style: nodeType === 'decision' ? { width: 150, height: 150 } : undefined,
       };
 
       setNodes((nds) => {
@@ -329,7 +337,7 @@ const ProcessCanvas = ({
         wrappedOnNodesChange([{ type: 'add', item: newNode }]);
       }
     },
-    [reactFlowInstance, setNodes, wrappedOnNodesChange, saveHistory, isReadOnly]
+    [reactFlowInstance, setNodes, wrappedOnNodesChange, saveHistory, isReadOnly, type, columnWidths]
   );
 
   const onNodeDoubleClick = useCallback((event: React.MouseEvent, node: Node) => {
@@ -443,8 +451,8 @@ const ProcessCanvas = ({
       }
 
       // Automatically adjust edges if nodes are being moved
-      const movedNodeIds = changes
-        .filter(c => c.type === 'position' && c.dragging)
+      const movedNodeIds = nextChanges
+        .filter(c => c.type === 'position' && (c as any).dragging)
         .map(c => (c as any).id);
 
       if (movedNodeIds.length > 0) {
@@ -463,6 +471,35 @@ const ProcessCanvas = ({
             return edge;
           })
         );
+      }
+
+      // Handle table mode constraints (nodes only in Column A)
+      if (type === 'table') {
+        const columnAWidth = columnWidths[0];
+        
+        // Check for position changes
+        const positionChanges = nextChanges.filter(c => c.type === 'position' && (c as any).position);
+        if (positionChanges.length > 0) {
+          nextChanges = nextChanges.map(change => {
+            if (change.type === 'position' && (change as any).position) {
+              const pos = (change as any).position;
+              // Restrict horizontally to Column A (plus some padding)
+              const minX = ROW_LABEL_WIDTH + 10;
+              const maxX = ROW_LABEL_WIDTH + columnAWidth - 50; // Allow it near the edge
+              
+              if (pos.x < minX || pos.x > maxX) {
+                return {
+                  ...change,
+                  position: {
+                    ...pos,
+                    x: Math.max(minX, Math.min(pos.x, maxX))
+                  }
+                };
+              }
+            }
+            return change;
+          });
+        }
       }
 
       if (wrappedOnNodesChange) {
@@ -500,14 +537,6 @@ const ProcessCanvas = ({
                 nodesDraggable={!isReadOnly}
                 nodesConnectable={!isReadOnly}
                 elementsSelectable={true}
-                translateExtent={type === 'table' ? [
-                  [0, 0], 
-                  [totalWidth + ROW_LABEL_WIDTH + 200, fullHeight + 200]
-                ] : undefined}
-                nodeExtent={type === 'table' ? [
-                  [ROW_LABEL_WIDTH, HEADER_HEIGHT],
-                  [totalWidth + ROW_LABEL_WIDTH, fullHeight]
-                ] : undefined}
                 defaultEdgeOptions={{ 
                   type: 'editable-step',
                   markerEnd: {
@@ -519,9 +548,6 @@ const ProcessCanvas = ({
                   ? { stroke: '#ef4444', strokeDasharray: '5,5', strokeWidth: 2 } 
                   : { stroke: '#3b82f6', strokeWidth: 2 }}
                 deleteKeyCode={isReadOnly ? null : ['Backspace', 'Delete']}
-                zoomOnScroll={type === 'table' ? false : true}
-                panOnScroll={type === 'table' ? true : false}
-                panOnScrollMode={type === 'table' ? PanOnScrollMode.Vertical : undefined}
             >
 
                 <Controls />
