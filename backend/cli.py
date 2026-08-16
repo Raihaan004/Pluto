@@ -70,22 +70,12 @@ def check_connectivity():
         except Exception:
             print(f"{Colors.FAIL}[✗] Supabase: Unreachable at {sb_url}{Colors.ENDC}")
 
-    # 4. Admin Supabase
-    admin_sb_url = os.getenv("ADMIN_SUPABASE_URL")
-    if admin_sb_url:
-        try:
-            res = requests.get(f"{admin_sb_url}/rest/v1/", timeout=5)
-            if res.status_code in [200, 401]:
-                print(f"{Colors.OKGREEN}[✓] Admin Supabase: Connected to {admin_sb_url}{Colors.ENDC}")
-        except Exception:
-            print(f"{Colors.FAIL}[✗] Admin Supabase: Unreachable at {admin_sb_url}{Colors.ENDC}")
-
 def show_config(mask=True):
     print(f"\n{Colors.HEADER}=== Backend Configuration ==={Colors.ENDC}")
     config_vars = [
         "SUPABASE_URL", "SUPABASE_KEY", "DATABASE_URL", 
         "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "FRONTEND_URL",
-        "JIRA_URL", "JIRA_PROJECT_KEY", "ADMIN_SUPABASE_URL"
+        "JIRA_URL", "JIRA_PROJECT_KEY"
     ]
     for var in config_vars:
         val = os.getenv(var)

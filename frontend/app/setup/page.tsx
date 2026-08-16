@@ -29,16 +29,10 @@ export default function SetupPage() {
   useEffect(() => {
     if (isLoaded && !user) {
       router.push("/sign-in")
-    }
-    // If the instance is already verified AND the current user is verified, go to dashboard
-    if (isVerified && isInstanceActivated) {
+    } else if (isLoaded) {
       router.push("/dashboard")
     }
-    // If the instance is verified but the user isn't, they should be on the pending page
-    if (!isVerified && isInstanceActivated) {
-      router.push("/pending")
-    }
-  }, [isLoaded, user, isVerified, isInstanceActivated, router])
+  }, [isLoaded, user, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

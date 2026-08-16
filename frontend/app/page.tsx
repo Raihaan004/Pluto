@@ -48,7 +48,7 @@ const features = [
   {
     Icon: BarChart3,
     name: "System Heartbeat",
-    description: "Monitor instance health and resource usage in real-time with centralized Pluto Admin connectivity.",
+    description: "Monitor instance health and resource usage in real-time.",
     href: "/dashboard/settings",
     cta: "View Health",
     background: <div className="absolute -right-20 -top-20 opacity-60" />,
@@ -78,7 +78,7 @@ const reviews = [
   {
     name: "Sarah Kim",
     username: "@skim_safety",
-    body: "The Pluto Admin dashboard gives us full visibility into our organization''s license and system health.",
+    body: "The Pluto workspace gives us full visibility into our organization's processes and system health.",
     img: "https://avatar.vercel.sh/sarah",
   },
 ];

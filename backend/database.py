@@ -36,20 +36,4 @@ def get_db():
     finally:
         db.close()
 
-# --- REMOTE ADMIN DATABASE (Cloud-based for license verification) ---
-# Admin Database (for license verification against Pluto Admin)
-admin_url: str = os.environ.get("ADMIN_SUPABASE_URL", "")
-admin_key: str = os.environ.get("ADMIN_SUPABASE_KEY", "")
 
-# We keep this to talk to the centralized "Pluto Admin" for license checks
-admin_supabase: Client = None
-if admin_url and admin_key:
-    try:
-        admin_supabase = create_client(admin_url, admin_key)
-    except Exception as e:
-        print(f"[Pluto Backend] Warning initializing admin Supabase client: {e}")
-else:
-    # If not set, use placeholder or handle error in verification logic
-    pass
-
-# We no longer export the local 'supabase' client as we use SQLAlchemy now.

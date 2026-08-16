@@ -336,42 +336,19 @@ export default function SettingsPage() {
                       </div>
                     ) : (
                       <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
-                        <div className="rounded-xl border border-red-200 bg-red-50/30 p-6 space-y-4">
+                        <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-6 space-y-4">
                           <div className="flex items-center justify-between">
-                             <div className="flex items-center gap-2 font-bold text-red-800">
-                                <ExternalLink className="w-5 h-5" />
-                                Pluto Admin Connection
+                             <div className="flex items-center gap-2 font-bold text-blue-800">
+                                <Shield className="w-5 h-5" />
+                                Pluto System Mode
                              </div>
-                             <div className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-mono uppercase tracking-widest">Connected</div>
+                             <div className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-mono uppercase tracking-widest">Standalone Active</div>
                           </div>
                           
-                          <Separator className="bg-red-200/50" />
+                          <Separator className="bg-blue-200/50" />
                           
-                          <div className="space-y-4 font-mono text-sm leading-relaxed">
-                            <div className="space-y-2">
-                              <Label className="text-red-900 font-bold flex items-center gap-2">
-                                 <Key className="w-4 h-4" />
-                                 ADMIN_SUPABASE_URL
-                              </Label>
-                              <div className="p-3 bg-gray-900 text-green-400 rounded-md border border-gray-800 break-all">
-                                https://huktyufeaiuhobamefpg.supabase.co
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-2">
-                              <Label className="text-red-900 font-bold flex items-center gap-2">
-                                 <Key className="w-4 h-4" />
-                                 ADMIN_SUPABASE_KEY
-                              </Label>
-                              <div className="p-3 bg-gray-900 text-gray-300 rounded-md border border-gray-800 break-all select-all">
-                                eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh1a3R5dWZlYWl1aG9iYW1lZnBnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQ5NDQ3OSwiZXhwIjoyMDg1MDcwNDc5fQ.cBJXI0Mc3nnaTcjCWn073JJFd1j6XgX96SNA1uW-z50
-                              </div>
-                            </div>
-                          </div>
-                          
-                          <div className="text-[12px] text-red-700/70 italic flex items-center gap-2">
-                             <Shield className="w-3 h-3" />
-                             These keys establish the core trust relationship between this instance and the central Pluto control plane.
+                          <div className="text-sm text-blue-900 leading-relaxed">
+                            This Pluto instance is running in fully autonomous standalone mode. All services and databases are managed locally.
                           </div>
                         </div>
                         

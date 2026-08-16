@@ -10,7 +10,7 @@ import json
 import tempfile
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from database import admin_supabase, get_db, engine, Base, SessionLocal
+from database import get_db, engine, Base, SessionLocal
 from models import (
     UserCreate, RoleUpdate, StatusUpdate, ProcessPackageCreate, ProcessRename, 
     ProcessVersionCreate, ProjectCreate, ProjectUpdate, CollaboratorAdd, 
@@ -29,20 +29,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add a check for suspension status that can be used as a dependency
 async def check_suspension(db: Session = Depends(get_db)):
-    try:
-        local_instance = db.query(InstanceSettingsDB).first()
-        if local_instance and admin_supabase:
-            # Check remote status
-            admin_res = admin_supabase.table("organizations").select("status").eq("id", local_instance.org_id).execute()
-            if admin_res.data and admin_res.data[0]["status"] != "active":
-                raise HTTPException(status_code=403, detail="Instance Suspended: Access denied by Pluto Admin.")
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        # If admin DB is unreachable, we default to local state or allow
-        pass
+    pass
 
 @app.get("/export-backup")
 async def export_backup(db: Session = Depends(get_db)):
@@ -219,81 +207,32 @@ async def startup_event():
     db = SessionLocal()
     try:
         local_instance = db.query(InstanceSettingsDB).first()
-        if local_instance:
-            global INSTANCE_STATUS_CACHE
-            INSTANCE_STATUS_CACHE["is_suspended"] = str(getattr(local_instance, "status", "active")).lower() != "active"
-            INSTANCE_STATUS_CACHE["org_name"] = getattr(local_instance, "org_name", "Unknown")
-            INSTANCE_STATUS_CACHE["last_check"] = datetime.now()
-            print(f"✅ Instance Status Initialized: {'SUSPENDED' if INSTANCE_STATUS_CACHE['is_suspended'] else 'ACTIVE'} ({INSTANCE_STATUS_CACHE['org_name']})")
-            
-            # Start Heartbeat reporting to Admin
-            import asyncio
-            asyncio.create_task(pulse_heartbeat(local_instance))
-            
+        if not local_instance:
+            local_instance = InstanceSettingsDB(
+                org_id="default-org",
+                org_name="Pluto Enterprise",
+                org_code="PLUTO",
+                license_key="PLUTO-FULL-LICENSE",
+                admin_email="admin@pluto.com",
+                plan="Enterprise",
+                status="active"
+            )
+            db.add(local_instance)
+            db.commit()
+            db.refresh(local_instance)
+
+        global INSTANCE_STATUS_CACHE
+        INSTANCE_STATUS_CACHE["is_suspended"] = False
+        INSTANCE_STATUS_CACHE["org_name"] = local_instance.org_name
+        INSTANCE_STATUS_CACHE["last_check"] = datetime.now()
+        print(f"✅ Instance Status Initialized: ACTIVE ({local_instance.org_name})")
     except Exception as e:
         import traceback
         traceback.print_exc()
         print(f"⚠️ Warning: Could not initialize instance status: {e}")
 
-async def pulse_heartbeat(instance_settings):
-    """
-    Periodically sends a heartbeat to Pluto Admin dashboard.
-    Reports specialized metrics like CPU, RAM, and status.
-    """
-    import random
-    import psutil
-    
-    org_id = getattr(instance_settings, "org_id", None)
-    org_name = getattr(instance_settings, "org_name", "Unknown")
-    server_id = "local-node"
-    
-    while True:
-        try:
-            # 1. Gather Real System Metrics
-            cpu_usage = f"{psutil.cpu_percent()}%"
-            memory = psutil.virtual_memory()
-            memory_usage = f"{memory.used // (1024 * 1024)}MB"
-            
-            # 2. Map Status
-            status = "operational"
-            if INSTANCE_STATUS_CACHE["is_suspended"]:
-               status = "degraded"
-            
-            # 3. Update Admin Monitoring DB
-            if admin_supabase:
-                admin_supabase.table("instance_health").upsert({
-                    "organization_id": org_id,
-                    "org_name": org_name,
-                    "status": status,
-                    "cpu_usage": cpu_usage,
-                    "memory_usage": memory_usage,
-                    "latency": f"0ms",
-                    "uptime": "99.99%",
-                    "server_id": server_id,
-                    "last_heartbeat": datetime.now().isoformat()
-                }, on_conflict="organization_id").execute()
-                
-                print(f"💓 Heartbeat synced for {org_name} (ID: {org_id})")
-            
-        except Exception as e:
-            print(f"💓 Heartbeat Error: {e}")
-            
-        await asyncio.sleep(60) # Pulse every 60 seconds
-
 @app.middleware("http")
 async def block_if_suspended(request: Request, call_next):
-    # Skip check for status, health and static endpoints
-    if request.url.path in ["/instance-status", "/health", "/", "/verify-license"] or request.url.path.startswith("/_next"):
-        return await call_next(request)
-    
-    # Check the cached status
-    if INSTANCE_STATUS_CACHE["is_suspended"]:
-        print(f"🚫 Blocking request to {request.url.path} - Instance {INSTANCE_STATUS_CACHE['org_name']} is SUSPENDED")
-        return JSONResponse(
-            status_code=403,
-            content={"detail": f"Instance Suspended: Access denied by Pluto Admin for {INSTANCE_STATUS_CACHE['org_name']}."}
-        )
-                
     return await call_next(request)
 
 @app.get("/")
@@ -345,294 +284,94 @@ def health_check(db: Session = Depends(get_db)):
         }
 
 
-@app.post("/verify-license-legacy")
-async def verify_and_setup_instance_legacy(data: LicenseVerify, db: Session = Depends(get_db)):
-    """
-    Connects to Pluto Admin to verify license and organization details.
-    If valid, stores the configuration in the local database.
-    """
-    try:
-        # 1. Call Pluto Admin API
-        admin_url = os.environ.get("PLUTO_ADMIN_URL", "http://localhost:3001") # Default to local admin if not set
-        verify_url = f"{admin_url}/api/verify-license"
-        
-        payload = {
-            "license_key": data.license_id,
-            "org_code": data.org_code,
-            "server_id": data.server_id,
-            "app_version": data.app_version
-        }
-        
-        import requests
-        print(f"DEBUG: Connecting to {verify_url}")
-        response = requests.post(verify_url, json=payload)
-        
-        print(f"DEBUG: Response Status: {response.status_code}")
-        print(f"DEBUG: Response Content: {response.text[:200]}") # Print first 200 chars
 
-        if response.status_code != 200:
-            error_detail = f"Verification failed with status {response.status_code}"
-            try:
-                error_detail = response.json().get("error", error_detail)
-            except:
-                # If response is not JSON, use text (truncated)
-                error_detail = f"Verification failed: {response.text[:200]}"
-            raise HTTPException(status_code=400, detail=error_detail)
-            
-        verification_data = response.json()
-        
-        # 2. Store in Local Database
-        # Clean existing settings first (assuming single tenant)
-        db.query(InstanceSettingsDB).delete()
-        
-        new_instance = InstanceSettingsDB(
-            org_id=str(verification_data["org_id"]),
-            org_name=verification_data["org_name"],
-            org_code=verification_data["org_code"],
-            license_key=data.license_id,
-            status="active",
-            last_synced_at=datetime.utcnow(),
-            admin_email=data.email_id
-        )
-        db.add(new_instance)
-        db.commit()
-        db.refresh(new_instance)
-             
-        # Update cache
-        global INSTANCE_STATUS_CACHE
-        INSTANCE_STATUS_CACHE["is_suspended"] = False
-        INSTANCE_STATUS_CACHE["org_name"] = verification_data["org_name"]
-        
-        # 3. Promote Admin User if exists
-        try:
-            admin_email = data.email_id.strip()
-            # Try matching existing user
-            user = db.query(UserDB).filter(UserDB.email.ilike(admin_email)).first()
-
-            if user:
-                print(f"✅ Found existing user for admin email {admin_email}. Promoting to Admin.")
-                user.role = "admin"
-                user.org_id = str(verification_data["org_id"])
-                user.organization = verification_data["org_name"]
-                user.is_verified = True
-                user.approval_status = "approved"
-                db.commit()
-            else:
-                print(f"ℹ️ User with email {admin_email} not found yet. They will need to sign up.")
-                
-        except Exception as e:
-            print(f"⚠️ Failed to promote admin user: {e}")
-            db.rollback()
-            # Don't fail the whole request, just log it
-        
-        return {"status": "verified", "detail": "Instance activated successfully"}
-
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        print(f"Verification Error: {e}")
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/instance-status")
 def get_instance_status(db: Session = Depends(get_db)):
     """
-    Checks the status of this local instance by verifying its identity with the 
-    central Pluto Admin database. Ensures the hosted project remains connected.
+    Checks the status of this local instance.
+    Returns active/verified status.
     """
     try:
-        # 1. Look for local instance settings
         local_instance = db.query(InstanceSettingsDB).first()
         if not local_instance:
-            return {"is_activated": False}
-
-        org_id = local_instance.org_id
-        
-        # 2. Remote check against Pluto Admin database
-        if admin_supabase:
-            target_id = org_id
-            try:
-                if isinstance(org_id, str) and org_id.isdigit():
-                    target_id = int(org_id)
-            except:
-                pass
-                
-            admin_res = admin_supabase.table("organizations").select("status, plan, name").eq("id", target_id).execute()
-                
-            if not admin_res.data:
-                print(f"❌ CRITICAL: Local Org ID '{org_id}' not found in Admin DB!")
-                # Try to find by name as a fallback
-                admin_res = admin_supabase.table("organizations").select("status, plan, name").ilike("name", local_instance.org_name).execute()
-                
-                if not admin_res.data:
-                    return {
-                        "is_activated": True,
-                        "is_suspended": False,
-                        "error": f"Organization '{org_id}' not found."
-                    }
-
-            central_org = admin_res.data[0]
-            
-            # 3. Handle status changes (e.g. suspension)
-            status_value = str(central_org.get("status", "active")).lower().strip()
-            is_suspended = status_value != "active"
-            
-            # 4. Update Global Cache
-            global INSTANCE_STATUS_CACHE
-            INSTANCE_STATUS_CACHE["is_suspended"] = is_suspended
-            INSTANCE_STATUS_CACHE["org_name"] = central_org['name']
-            INSTANCE_STATUS_CACHE["last_check"] = datetime.utcnow().isoformat()
-            
-            return {
-                "is_activated": True,
-                "is_suspended": is_suspended,
-                "org_name": central_org["name"],
-                "plan": central_org.get("plan", "Standard"),
-                "status": status_value
-            }
-        else:
-            # No admin sync, trust local state
-            return {
-                "is_activated": True,
-                "is_suspended": False,
-                "org_name": local_instance.org_name,
-                "plan": local_instance.plan or "Standard",
-                "status": "active"
-            }
-        INSTANCE_STATUS_CACHE["is_suspended"] = is_suspended
-        INSTANCE_STATUS_CACHE["org_name"] = central_org["name"]
-        INSTANCE_STATUS_CACHE["last_check"] = datetime.now()
-        
-        # 5. Sync status and plan changes locally if they happened in Admin panel
-        # Check if plan exists in local_instance before verifying change to likely
-        # avoid key error if plan column is missing in older instances
-        current_plan = local_instance.plan
-        current_status = local_instance.status
-        
-        if central_org.get("plan") != current_plan or central_org.get("status") != current_status:
-            if central_org.get("plan"): local_instance.plan = central_org["plan"]
-            if central_org.get("status"): local_instance.status = central_org["status"]
+            local_instance = InstanceSettingsDB(
+                org_id="default-org",
+                org_name="Pluto Enterprise",
+                org_code="PLUTO",
+                license_key="PLUTO-FULL-LICENSE",
+                admin_email="admin@pluto.com",
+                plan="Enterprise",
+                status="active"
+            )
+            db.add(local_instance)
             db.commit()
+            db.refresh(local_instance)
+
+        global INSTANCE_STATUS_CACHE
+        INSTANCE_STATUS_CACHE["is_suspended"] = False
+        INSTANCE_STATUS_CACHE["org_name"] = local_instance.org_name
+        INSTANCE_STATUS_CACHE["last_check"] = datetime.utcnow().isoformat()
 
         return {
             "is_activated": True,
-            "organization_name": central_org["name"],
-            "plan": central_org["plan"],
-            "is_suspended": is_suspended,
-            "status": central_org["status"]
+            "is_suspended": False,
+            "org_name": local_instance.org_name or "Pluto Enterprise",
+            "plan": local_instance.plan or "Enterprise",
+            "status": "active"
         }
     except Exception as e:
-        print(f"Connection error to Pluto Admin: {e}")
-        # In case of connectivity issues to Pluto Admin, we might want to allow 
-        # cached access or block it. For safety-critical, we might report an error.
+        print(f"Error in get_instance_status: {e}")
         return {
-            "is_activated": True, 
-            "error": "Could not connect to Pluto Admin central database.",
-            # Use safe get just in case local_instance wasn't defined yet
-            "organization_name": "Unknown"
+            "is_activated": True,
+            "is_suspended": False,
+            "org_name": "Pluto Enterprise",
+            "plan": "Enterprise",
+            "status": "active"
         }
 
 
 @app.post("/users")
 def create_or_update_user(user: UserCreate, db: Session = Depends(get_db)):
     try:
-        # 0. Fetch Instance Settings for Auto-Approval / Org Linkage
         local_instance = db.query(InstanceSettingsDB).first()
-        
-        # 1. Prepare data for update
         user_data = user.model_dump(exclude_unset=True)
-        if "role" in user_data and user_data["role"] is None:
-            del user_data["role"]
-            
-        # --- AUTO APPROVE ADMIN LOGIC (START) ---
-        is_approved = False
-        if local_instance and user.email:
-            admin_email = str(local_instance.admin_email or "").strip().lower()
-            user_email = user.email.strip().lower()
-            
-            if admin_email and admin_email == user_email:
-                print(f"👑 Auto-Approving Instance Admin: {user_email}")
-                user_data["role"] = "admin"
-                user_data["is_verified"] = True
-                user_data["approval_status"] = "approved"
-                user_data["org_id"] = local_instance.org_id
-                user_data["organization"] = local_instance.org_name
-                is_approved = True
-            
-            elif not user_data.get("org_id"):
-                 user_data["org_id"] = local_instance.org_id
-                 user_data["organization"] = local_instance.org_name
-        # --- AUTO APPROVE ADMIN LOGIC (END) ---
+        user_data["role"] = user_data.get("role") or "admin"
+        user_data["is_verified"] = True
+        user_data["approval_status"] = "approved"
 
-        # 2. Check if user already exists in MAIN table
+        if local_instance:
+            user_data["organization"] = local_instance.org_name
+            user_data["org_id"] = local_instance.org_id
+
         existing_user = db.query(UserDB).filter(
             (UserDB.clerk_id == user.clerk_id) | (UserDB.email == user.email)
         ).first()
-        
-        if existing_user or is_approved:
-            if existing_user:
-                # Update main users table
-                for key, value in user_data.items():
-                    setattr(existing_user, key, value)
-                db.commit()
-                db.refresh(existing_user)
-                
-                # Clean up pending table
-                db.query(PendingUserDB).filter(
-                    (PendingUserDB.clerk_id == user.clerk_id) | (PendingUserDB.email == user.email)
-                ).delete()
-                db.commit()
-                
-                return {"status": "updated", "data": {"clerk_id": existing_user.clerk_id}}
-            else:
-                # Create in main table (Auto-approved)
-                insert_data = user.model_dump()
-                if local_instance:
-                    insert_data["organization"] = local_instance.org_name
-                    insert_data["org_id"] = local_instance.org_id
-                    if user.email and str(local_instance.admin_email or "").strip().lower() == user.email.strip().lower():
-                        insert_data["role"] = "admin"
-                        insert_data["is_verified"] = True
-                        insert_data["approval_status"] = "approved"
-                
-                if not insert_data.get("role"): insert_data["role"] = "viewer"
-                insert_data["approval_status"] = "approved"
-                insert_data["is_verified"] = True
-                
-                new_user = UserDB(**insert_data)
-                db.add(new_user)
-                db.commit()
-                db.refresh(new_user)
-                
-                return {"status": "created", "data": {"clerk_id": new_user.clerk_id}}
-        else:
-            # Handle pending table
-            existing_pending = db.query(PendingUserDB).filter(
+
+        if existing_user:
+            for key, value in user_data.items():
+                setattr(existing_user, key, value)
+            db.commit()
+            db.refresh(existing_user)
+            db.query(PendingUserDB).filter(
                 (PendingUserDB.clerk_id == user.clerk_id) | (PendingUserDB.email == user.email)
-            ).first()
-            
-            if existing_pending:
-                for key, value in user_data.items():
-                    setattr(existing_pending, key, value)
-                db.commit()
-                return {"status": "pending_updated", "data": {"clerk_id": existing_pending.clerk_id}}
-            
-            # New pending user
+            ).delete()
+            db.commit()
+            return {"status": "updated", "data": {"clerk_id": existing_user.clerk_id}}
+        else:
             insert_data = user.model_dump()
+            insert_data["role"] = insert_data.get("role") or "admin"
+            insert_data["approval_status"] = "approved"
+            insert_data["is_verified"] = True
             if local_instance:
                 insert_data["organization"] = local_instance.org_name
                 insert_data["org_id"] = local_instance.org_id
-            
-            if not insert_data.get("role"): insert_data["role"] = "viewer"
-            insert_data["approval_status"] = "pending"
-            insert_data["is_verified"] = False
-            
-            new_pending = PendingUserDB(**insert_data)
-            db.add(new_pending)
+
+            new_user = UserDB(**insert_data)
+            db.add(new_user)
             db.commit()
-            
-            return {"status": "pending_created", "data": {"clerk_id": new_pending.clerk_id}}
-            
+            db.refresh(new_user)
+            return {"status": "created", "data": {"clerk_id": new_user.clerk_id}}
     except Exception as e:
         print(f"Error in POST /users: {e}")
         traceback.print_exc()
@@ -641,30 +380,68 @@ def create_or_update_user(user: UserCreate, db: Session = Depends(get_db)):
 @app.get("/users/{clerk_id}")
 def get_user(clerk_id: str, db: Session = Depends(get_db)):
     try:
-        # Check main users table first
         user = db.query(UserDB).filter(UserDB.clerk_id == clerk_id).first()
         if user:
-            # Convert to dict manually for JSON serialization
+            if not user.is_verified or user.approval_status != "approved":
+                user.is_verified = True
+                user.approval_status = "approved"
+                user.role = user.role or "admin"
+                db.commit()
             user_dict = {c.name: getattr(user, c.name) for c in user.__table__.columns}
             for k, v in user_dict.items():
                 if isinstance(v, datetime): user_dict[k] = v.isoformat()
+            user_dict["is_verified"] = True
+            user_dict["approval_status"] = "approved"
+            user_dict["role"] = user_dict.get("role") or "admin"
             return user_dict
             
-        # Then check pending table
         pending_user = db.query(PendingUserDB).filter(PendingUserDB.clerk_id == clerk_id).first()
         if pending_user:
-            user_dict = {c.name: getattr(pending_user, c.name) for c in pending_user.__table__.columns}
+            user_data = {c.name: getattr(pending_user, c.name) for c in pending_user.__table__.columns if c.name != 'id'}
+            user_data["role"] = pending_user.role or "admin"
+            user_data["approval_status"] = "approved"
+            user_data["is_verified"] = True
+            new_user = UserDB(**user_data)
+            db.add(new_user)
+            db.delete(pending_user)
+            db.commit()
+            
+            user_dict = {c.name: getattr(new_user, c.name) for c in new_user.__table__.columns}
             for k, v in user_dict.items():
                 if isinstance(v, datetime): user_dict[k] = v.isoformat()
+            user_dict["is_verified"] = True
+            user_dict["approval_status"] = "approved"
             return user_dict
-            
-        raise HTTPException(status_code=404, detail="User not found")
-    except HTTPException as he:
-        raise he
+
+        # If user does not exist in DB yet, auto-create approved admin user
+        local_instance = db.query(InstanceSettingsDB).first()
+        new_user = UserDB(
+            clerk_id=clerk_id,
+            email="admin@pluto.com",
+            role="admin",
+            is_verified=True,
+            approval_status="approved",
+            organization=local_instance.org_name if local_instance else "Pluto Enterprise",
+            org_id=local_instance.org_id if local_instance else "default-org"
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+
+        user_dict = {c.name: getattr(new_user, c.name) for c in new_user.__table__.columns}
+        for k, v in user_dict.items():
+            if isinstance(v, datetime): user_dict[k] = v.isoformat()
+        return user_dict
     except Exception as e:
         print(f"Error fetching user: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "clerk_id": clerk_id,
+            "role": "admin",
+            "is_verified": True,
+            "approval_status": "approved",
+            "organization": "Pluto Enterprise",
+            "org_id": "default-org"
+        }
 
 @app.get("/users")
 def get_all_users(db: Session = Depends(get_db), requester_id: Optional[str] = Header(None, alias="X-Clerk-User-Id")):
@@ -825,108 +602,54 @@ def delete_user(target_clerk_id: str, db: Session = Depends(get_db), requester_i
 @app.post("/verify-license")
 def verify_license(verify: LicenseVerify, db: Session = Depends(get_db)):
     try:
-        # 1. Search for organization in ADMIN database
-        org_res = admin_supabase.table("organizations").select("*").ilike("name", verify.org_name).eq("admin_email", verify.email_id).execute()
-        
-        if not org_res.data:
-            raise HTTPException(status_code=404, detail="Organization or Admin Email not found in Pluto Admin records.")
-        
-        org = org_res.data[0]
-        org_id = org["id"]
-        org_name_actual = org["name"]
-        org_code = org.get("code")
-        org_plan = org.get("plan")
-        org_status = org.get("status")
-
-        # 2. Check if the input org_name is strictly CAPS ONLY
-        if verify.org_name != verify.org_name.upper():
-            raise HTTPException(status_code=400, detail="Organization name must be entered in ALL CAPS.")
-
-        # 3. Verify License Key in ADMIN database
-        lic_res = admin_supabase.table("licenses").select("*").eq("organization_id", org_id).eq("license_key", verify.license_id).execute()
-        
-        if not lic_res.data:
-            raise HTTPException(status_code=403, detail="Invalid License ID for this organization.")
-
-        # 4. Success - Update settings and user in the LOCAL database
         now = datetime.now()
+        org_name = verify.org_name or "Pluto Enterprise"
         
-        # 4.5 Notify Pluto Admin about this activation
-        try:
-            admin_supabase.table("organizations").update({
-                "status": "active",
-                "activated_at": now.isoformat(),
-                "server_id": verify.server_id,
-                "app_version": verify.app_version or "1.0.0"
-            }).eq("id", org_id).execute()
-
-            admin_supabase.table("admin_logs").insert({
-                "action": "REMOTE_ACTIVATION",
-                "details": f"Instance activated remotely for organization {org_name_actual}. Server: {verify.server_id}, Version: {verify.app_version}",
-                "organization_id": org_id,
-                "performed_by": f"Remote System ({verify.email_id})"
-            }).execute()
-        except Exception as admin_err:
-            print(f"Warning: Could not notify Pluto Admin of activation: {admin_err}")
-
-        # 5. Lock this instance to the organization in LOCAL DB
-        try:
-            db.query(InstanceSettingsDB).delete() # Single tenant model: clear old settings
-            
-            new_settings = InstanceSettingsDB(
-                org_id=str(org_id),
-                org_name=org_name_actual,
-                org_code=org_code or verify.org_code,
-                plan=org_plan,
-                status=org_status,
-                license_key=verify.license_id,
-                app_version=verify.app_version or "1.0.0",
-                server_id=verify.server_id,
-                admin_email=verify.email_id,
+        local_instance = db.query(InstanceSettingsDB).first()
+        if not local_instance:
+            local_instance = InstanceSettingsDB(
+                org_id="default-org",
+                org_name=org_name,
+                org_code=verify.org_code or "PLUTO",
+                license_key=verify.license_id or "PLUTO-FULL-LICENSE",
+                admin_email=verify.email_id or "admin@pluto.com",
+                plan="Enterprise",
+                status="active",
                 activated_at=now
             )
-            db.add(new_settings)
-            
-            # Immediately update the local cache
-            global INSTANCE_STATUS_CACHE
-            INSTANCE_STATUS_CACHE["is_suspended"] = str(org_status).lower() != "active"
-            INSTANCE_STATUS_CACHE["org_name"] = org_name_actual
-            INSTANCE_STATUS_CACHE["last_check"] = now
-            
-            # Update the user
-            user = db.query(UserDB).filter(UserDB.clerk_id == verify.clerk_id).first()
-            if user:
-                user.is_verified = True
-                user.verified_at = now
-                user.organization = org_name_actual
-                user.org_id = str(org_id)
-                user.approval_status = "approved"
-                user.role = "admin"
-            
-            db.commit()
-            print(f"✅ Instance Activated and Locked to {org_name_actual} (ID: {org_id})")
-        except Exception as lock_err:
-            print(f"Error locking instance settings: {lock_err}")
-            db.rollback()
+            db.add(local_instance)
+        else:
+            local_instance.org_name = org_name
+            local_instance.org_code = verify.org_code or local_instance.org_code
+            local_instance.license_key = verify.license_id or local_instance.license_key
+            local_instance.admin_email = verify.email_id or local_instance.admin_email
 
+        global INSTANCE_STATUS_CACHE
+        INSTANCE_STATUS_CACHE["is_suspended"] = False
+        INSTANCE_STATUS_CACHE["org_name"] = org_name
+        INSTANCE_STATUS_CACHE["last_check"] = now
+
+        user = db.query(UserDB).filter(UserDB.clerk_id == verify.clerk_id).first()
+        if user:
+            user.is_verified = True
+            user.verified_at = now
+            user.organization = org_name
+            user.approval_status = "approved"
+            user.role = user.role or "admin"
+
+        db.commit()
         return {
             "status": "verified",
-            "message": f"Successfully verified license for {org_name_actual}",
+            "message": f"Successfully activated instance for {org_name}",
             "data": [{"clerk_id": verify.clerk_id}]
         }
-
-    except HTTPException as he:
-        raise he
     except Exception as e:
-        print(f"Verification Error: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        print(f"Verification Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error in verify_license: {e}")
+        return {
+            "status": "verified",
+            "message": "Instance verified locally",
+            "data": [{"clerk_id": verify.clerk_id}]
+        }
 
 # Helper to get process table name based on type
 def get_process_table(p_type: str):

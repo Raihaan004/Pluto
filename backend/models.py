@@ -8,7 +8,7 @@ from database import Base
 
 class UserDB(Base):
     __tablename__ = "users"
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     clerk_id = Column(String, unique=True, nullable=False)
     email = Column(String, nullable=False)
     first_name = Column(String, nullable=True)
@@ -25,7 +25,7 @@ class UserDB(Base):
 
 class PendingUserDB(Base):
     __tablename__ = "pending_users"
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     clerk_id = Column(String, unique=True, nullable=False)
     email = Column(String, nullable=False)
     first_name = Column(String, nullable=True)
@@ -40,7 +40,7 @@ class PendingUserDB(Base):
 
 class InstanceSettingsDB(Base):
     __tablename__ = "instance_settings"
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     org_id = Column(String, nullable=False)
     org_name = Column(String, nullable=False)
     org_code = Column(String, nullable=True)
@@ -61,7 +61,7 @@ class JiraConfig(BaseModel):
 
 class ProcessDB(Base):
     __tablename__ = "processes"
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     user_id = Column(String, nullable=False)
     org_id = Column(String, nullable=True)
     name = Column(String, nullable=False)
@@ -74,24 +74,24 @@ class ProcessDB(Base):
 
 class ProjectDB(Base):
     __tablename__ = "projects"
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     user_id = Column(String, nullable=False)
     name = Column(String, nullable=False)
-    process_id = Column(BigInteger, nullable=True)
+    process_id = Column(Integer, nullable=True)
     version_name = Column(String, nullable=True)
     sheets = Column(JSON, nullable=False, default=[])
     collaborators = Column(JSON, nullable=False, default=[])
     progress = Column(Integer, default=0)
     status = Column(String, default='draft')
     jira_project_key = Column(String, nullable=True)
-    org_id = Column(BigInteger, nullable=True)
+    org_id = Column(String, nullable=True)
     type = Column(String, default='freestyle')
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class NotificationDB(Base):
     __tablename__ = "notifications"
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     user_id = Column(String, nullable=False)
     type = Column(String, nullable=False)
     title = Column(String, nullable=False)
